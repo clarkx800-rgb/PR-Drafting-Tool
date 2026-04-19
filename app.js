@@ -19,13 +19,13 @@ class RailDrafterSVG {
             drawer: document.getElementById('configDrawer'),
             overlay: document.getElementById('drawerOverlay'),
             openBtn: document.getElementById('openMenuBtn'),
-            closeBtn: document.getElementById('closeMenuBtn')
+            closeBtn: document.getElementById('closeMenuBtn'),
+            pullTab: document.getElementById('pullTab')
         };
 
-        // Data Inputs
+        // Data Inputs (Custom Holes Purged)
         this.inputs = {
             length: document.getElementById('railLength'),
-            holes: document.getElementById('holeCount'),
             posOffset: document.getElementById('posOffset'),
             negOffset: document.getElementById('negOffset'),
             postOffsetVal: document.getElementById('postOffsetVal'),
@@ -37,6 +37,7 @@ class RailDrafterSVG {
         this.camera = { x: 0, y: 0, width: 1000, height: 1000 };
         this.drag = { active: false, startX: 0, startY: 0, startCamX: 0, startCamY: 0 };
         this.boundingBox = { minX: 0, maxX: 1000, minY: 0, maxY: 1000 };
+        this.isDrawerOpen = false;
 
         this.init();
     }
@@ -44,12 +45,13 @@ class RailDrafterSVG {
     init() {
         window.addEventListener('resize', () => this.resizeWorkspace());
         
-        // Drawer State Binding
+        // UI Bindings
         this.ui.openBtn.addEventListener('click', () => this.toggleDrawer(true));
         this.ui.closeBtn.addEventListener('click', () => this.toggleDrawer(false));
-        this.ui.overlay.addEventListener('click', () => this.toggleDrawer(false)); // Close on outside click
+        this.ui.overlay.addEventListener('click', () => this.toggleDrawer(false)); 
+        this.ui.pullTab.addEventListener('click', () => this.toggleDrawer(!this.isDrawerOpen));
 
-        // Input Binding
+        // Input Data Bindings
         Object.values(this.inputs).forEach(input => {
             if(input.tagName === 'INPUT' || input.tagName === 'SELECT') {
                 input.addEventListener('input', () => this.renderAndRecenter());
@@ -58,20 +60,63 @@ class RailDrafterSVG {
         
         document.getElementById('exportPdfBtn').addEventListener('click', () => {
             this.exportPDF();
-            this.toggleDrawer(false); // Auto-close drawer on export
+            this.toggleDrawer(false); 
         });
         
-        // Camera Binding
+        // Camera Bindings
         document.getElementById('btn-zoom-in').addEventListener('click', () => this.adjustZoom(0.8));
         document.getElementById('btn-zoom-out').addEventListener('click', () => this.adjustZoom(1.2));
         document.getElementById('btn-recenter').addEventListener('click', () => this.recenterCamera());
 
         this.bindCameraEvents();
+        this.bindGestureEngine();
         this.renderAndRecenter();
-        this.toggleDrawer(true); // Open drawer on load so user knows where inputs are
+    }
+
+    // Dynamic Edge-Swipe Engine
+    bindGestureEngine() {
+        let touchStartX = 0, touchStartY = 0;
+        const SWIPE_THRESHOLD = 60; 
+
+        window.addEventListener('touchstart', e => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+
+        window.addEventListener('touchend', e => {
+            if(!touchStartX || !touchStartY) return;
+            let endX = e.changedTouches[0].clientX;
+            let endY = e.changedTouches[0].clientY;
+            
+            // Detect aspect ratio to determine gesture axis
+            const isLandscape = window.innerWidth > window.innerHeight;
+            
+            if (!this.isDrawerOpen) {
+                if (isLandscape) {
+                    // Swipe left from right edge
+                    if (touchStartX > window.innerWidth - 60 && (touchStartX - endX) > SWIPE_THRESHOLD) {
+                        this.toggleDrawer(true);
+                    }
+                } else {
+                    // Swipe up from bottom edge
+                    if (touchStartY > window.innerHeight - 60 && (touchStartY - endY) > SWIPE_THRESHOLD) {
+                        this.toggleDrawer(true);
+                    }
+                }
+            } else {
+                // Swipe to close
+                if (isLandscape && (endX - touchStartX) > SWIPE_THRESHOLD) {
+                    this.toggleDrawer(false);
+                } else if (!isLandscape && (endY - touchStartY) > SWIPE_THRESHOLD) {
+                    this.toggleDrawer(false);
+                }
+            }
+            touchStartX = 0; touchStartY = 0;
+        }, { passive: true });
     }
 
     toggleDrawer(isOpen) {
+        this.isDrawerOpen = isOpen;
         if (isOpen) {
             this.ui.drawer.classList.add('open');
             this.ui.overlay.classList.add('active');
@@ -142,6 +187,8 @@ class RailDrafterSVG {
     recenterCamera() {
         const padX = (this.boundingBox.maxX - this.boundingBox.minX) * 0.1;
         this.camera.width = (this.boundingBox.maxX - this.boundingBox.minX) + (padX * 2);
+        
+        // Auto-scale aspect ratio detection
         const aspect = this.svg.clientHeight / this.svg.clientWidth;
         this.camera.height = this.camera.width * aspect;
         
@@ -182,7 +229,6 @@ class RailDrafterSVG {
 
     render() {
         const lengthMm = this.sanitizeNumeric(this.inputs.length.value, MAX_LENGTH_MM);
-        const holes = this.sanitizeNumeric(this.inputs.holes.value, 40);
         const posOffset = this.getOptionalNumeric(this.inputs.posOffset.value);
         const negOffset = this.getOptionalNumeric(this.inputs.negOffset.value);
         const postOffsetVal = this.sanitizeNumeric(this.inputs.postOffsetVal.value, MAX_LENGTH_MM);
@@ -261,16 +307,6 @@ class RailDrafterSVG {
         drawConnector(posOffset, topRailY, '#e74c3c', -80);
         drawConnector(negOffset, bottomRailY, '#3498db', RAIL_HEIGHT + 80);
 
-        if (holes > 0 && lengthMm > 0) {
-            const spacing = lengthMm / (holes + 1);
-            for (let i = 1; i <= holes; i++) {
-                const holeX = spacing * i;
-                const holeRadius = Math.min(10, 5 * (uiScale * 0.5)); 
-                this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: topRailY + (RAIL_HEIGHT/2), r: holeRadius, fill: '#1e1e24' }));
-                this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: bottomRailY + (RAIL_HEIGHT/2), r: holeRadius, fill: '#1e1e24' }));
-            }
-        }
-        
         const totalDimY = bottomRailY + RAIL_HEIGHT + (140 * uiScale);
         if (totalDimY > this.boundingBox.maxY) this.boundingBox.maxY = totalDimY + (30 * uiScale);
         this.svg.appendChild(this.drawDimension(0, totalDimY, lengthMm, `${lengthMm} mm Total Drop`, '#ff6b6b', uiScale));
@@ -292,10 +328,10 @@ class RailDrafterSVG {
         
         doc.setFontSize(11);
         doc.text(`Target Length: ${length} mm`, 15, 30);
-        doc.text(`Custom Drill Holes: ${this.inputs.holes.value * 2} (${this.inputs.holes.value} per rail)`, 15, 38);
-        doc.text(`Anchor Configuration: Initiated ${postOffsetVal}mm from ${postOffsetRef} Tip`, 15, 46);
+        // Custom holes text stripped entirely from document logic
+        doc.text(`Anchor Configuration: Initiated ${postOffsetVal}mm from ${postOffsetRef} Tip`, 15, 38);
 
-        let yPointer = 58;
+        let yPointer = 50;
         doc.setFontSize(12);
         doc.text("Hardware Manifest:", 15, yPointer);
         doc.setFontSize(11);
