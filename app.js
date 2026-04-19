@@ -1,15 +1,16 @@
+const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_LENGTH_MM = 9998;
 const POST_INTERVAL_MM = 2000;
 
-// Camera Security/Stability Bounds
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 5.0;
-const MAX_PAN = 3000;
+// Dual Rail Architecture Constants
+const RAIL_HEIGHT = 40;
+const RAIL_GAP = 60; // Space between pos and neg rails
+const POST_WIDTH = 60;
+const POST_HEIGHT = (RAIL_HEIGHT * 2) + RAIL_GAP + 40; // Overhangs rails by 20px on top/bottom
 
-class RailDrafter {
+class RailDrafterSVG {
     constructor() {
-        this.canvas = document.getElementById('draftCanvas');
-        this.ctx = this.canvas.getContext('2d');
+        this.svg = document.getElementById('draftWorkspace');
         
         this.inputs = {
             length: document.getElementById('railLength'),
@@ -18,226 +19,250 @@ class RailDrafter {
         };
         this.labels = { distance: document.getElementById('live-distance') };
         
-        // 2D Camera State
-        this.camera = { panX: 0, panY: 0, zoom: 1.0 };
-        this.drag = { active: false, startX: 0, startY: 0 };
-        this.renderPending = false; 
+        // Native SVG Camera State
+        this.camera = { x: 0, y: 0, width: 1000, height: 1000 };
+        this.drag = { active: false, startX: 0, startY: 0, startCamX: 0, startCamY: 0 };
         
         this.init();
     }
 
     init() {
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
+        this.resizeWorkspace();
+        window.addEventListener('resize', () => this.resizeWorkspace());
         
-        // Data Inputs
-        this.inputs.length.addEventListener('input', () => this.queueRender());
-        this.inputs.holes.addEventListener('input', () => this.queueRender());
+        this.inputs.length.addEventListener('input', () => this.render());
+        this.inputs.holes.addEventListener('input', () => this.render());
         document.getElementById('exportPdfBtn').addEventListener('click', () => this.exportPDF());
         
-        // UI Camera Controls
-        document.getElementById('btn-zoom-in').addEventListener('click', () => this.adjustZoom(1.2));
-        document.getElementById('btn-zoom-out').addEventListener('click', () => this.adjustZoom(0.8));
+        document.getElementById('btn-zoom-in').addEventListener('click', () => this.adjustZoom(0.8));
+        document.getElementById('btn-zoom-out').addEventListener('click', () => this.adjustZoom(1.2));
         document.getElementById('btn-recenter').addEventListener('click', () => this.recenterCamera());
 
-        this.bindPointerEvents();
-        this.queueRender();
+        this.bindCameraEvents();
+        this.render();
     }
 
-    bindPointerEvents() {
-        // Panning (Touch & Mouse)
-        this.canvas.addEventListener('pointerdown', (e) => {
+    // --- SECURITY: Secure DOM Node Builder ---
+    // Prevents XSS by strictly using element creation rather than innerHTML strings
+    createNode(tag, attributes) {
+        const el = document.createElementNS(SVG_NS, tag);
+        for (const [key, value] of Object.entries(attributes)) {
+            el.setAttribute(key, value);
+        }
+        return el;
+    }
+
+    bindCameraEvents() {
+        this.svg.addEventListener('pointerdown', (e) => {
             this.drag.active = true;
-            this.drag.startX = e.clientX - this.camera.panX;
-            this.drag.startY = e.clientY - this.camera.panY;
-            this.canvas.style.cursor = 'grabbing';
-            this.canvas.setPointerCapture(e.pointerId); 
+            this.drag.startX = e.clientX;
+            this.drag.startY = e.clientY;
+            this.drag.startCamX = this.camera.x;
+            this.drag.startCamY = this.camera.y;
+            this.svg.setPointerCapture(e.pointerId);
         });
 
-        this.canvas.addEventListener('pointermove', (e) => {
+        this.svg.addEventListener('pointermove', (e) => {
             if (!this.drag.active) return;
             
-            const nextPanX = e.clientX - this.drag.startX;
-            const nextPanY = e.clientY - this.drag.startY;
-            
-            // Clamp pan to prevent losing drawing
-            this.camera.panX = Math.max(-MAX_PAN, Math.min(nextPanX, MAX_PAN));
-            this.camera.panY = Math.max(-MAX_PAN, Math.min(nextPanY, MAX_PAN));
-            this.queueRender();
+            // Calculate physical pixel to SVG unit ratio
+            const rect = this.svg.getBoundingClientRect();
+            const ratioX = this.camera.width / rect.width;
+            const ratioY = this.camera.height / rect.height;
+
+            const dx = (e.clientX - this.drag.startX) * ratioX;
+            const dy = (e.clientY - this.drag.startY) * ratioY;
+
+            // Invert dx/dy to drag the camera opposite to pointer movement
+            this.camera.x = this.drag.startCamX - dx;
+            this.camera.y = this.drag.startCamY - dy;
+            this.applyCamera();
         });
 
         const endDrag = (e) => {
             this.drag.active = false;
-            this.canvas.style.cursor = 'default';
-            if (e.pointerId) this.canvas.releasePointerCapture(e.pointerId);
+            if (e.pointerId) this.svg.releasePointerCapture(e.pointerId);
         };
 
-        this.canvas.addEventListener('pointerup', endDrag);
-        this.canvas.addEventListener('pointercancel', endDrag);
-        this.canvas.addEventListener('pointerout', endDrag);
+        this.svg.addEventListener('pointerup', endDrag);
+        this.svg.addEventListener('pointercancel', endDrag);
 
-        // Mouse Wheel Zoom
-        this.canvas.addEventListener('wheel', (e) => {
-            e.preventDefault(); // Prevent page scroll while over canvas
-            const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-            this.adjustZoom(zoomFactor);
-        }, { passive: false }); // Requires passive: false to allow e.preventDefault()
+        this.svg.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const factor = e.deltaY > 0 ? 1.1 : 0.9;
+            this.adjustZoom(factor);
+        }, { passive: false });
+    }
+
+    applyCamera() {
+        // Native SVG hardware-accelerated manipulation
+        this.svg.setAttribute('viewBox', `${this.camera.x} ${this.camera.y} ${this.camera.width} ${this.camera.height}`);
     }
 
     adjustZoom(factor) {
-        let newZoom = this.camera.zoom * factor;
-        // Clamp zoom to prevent memory/rendering crashes
-        this.camera.zoom = Math.max(MIN_ZOOM, Math.min(newZoom, MAX_ZOOM));
-        this.queueRender();
+        const newWidth = this.camera.width * factor;
+        const newHeight = this.camera.height * factor;
+        
+        // Offset X and Y to zoom into the center of the current view
+        this.camera.x -= (newWidth - this.camera.width) / 2;
+        this.camera.y -= (newHeight - this.camera.height) / 2;
+        
+        this.camera.width = newWidth;
+        this.camera.height = newHeight;
+        this.applyCamera();
     }
 
     recenterCamera() {
-        this.camera = { panX: 0, panY: 0, zoom: 1.0 };
-        this.queueRender();
+        const lengthMm = this.sanitizeNumeric(this.inputs.length.value, MAX_LENGTH_MM);
+        // Add 200mm padding to framing
+        this.camera.width = lengthMm + 400; 
+        this.camera.height = this.camera.width * (this.svg.clientHeight / this.svg.clientWidth);
+        this.camera.x = -200;
+        this.camera.y = -(this.camera.height / 2) + 100;
+        this.applyCamera();
     }
 
-    resizeCanvas() {
-        const rect = this.canvas.parentElement.getBoundingClientRect();
-        this.canvas.width = rect.width - 40; 
-        this.canvas.height = rect.height - 100;
+    resizeWorkspace() {
         this.recenterCamera();
     }
 
     sanitizeNumeric(val, max) {
         let parsed = parseInt(val, 10);
-        if (isNaN(parsed) || parsed < 0) return 0;
-        if (parsed > max) return max;
-        return parsed;
-    }
-
-    sanitizeString(str) {
-        return str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
-    queueRender() {
-        if (!this.renderPending) {
-            this.renderPending = true;
-            requestAnimationFrame(() => this.render());
-        }
+        return (isNaN(parsed) || parsed < 0) ? 0 : Math.min(parsed, max);
     }
 
     render() {
-        this.renderPending = false;
-
         const lengthMm = this.sanitizeNumeric(this.inputs.length.value, MAX_LENGTH_MM);
-        const holes = this.sanitizeNumeric(this.inputs.holes.value, 20);
+        const holes = this.sanitizeNumeric(this.inputs.holes.value, 40);
         this.labels.distance.textContent = `${lengthMm} mm`;
-        
-        const width = this.canvas.width;
-        const height = this.canvas.height;
-        const ctx = this.ctx;
 
-        // Reset Transform to identity matrix for absolute clearing
-        ctx.setTransform(1, 0, 0, 1, 0, 0); 
-        ctx.clearRect(0, 0, width, height);
-
-        // --- CAMERA TRANSFORMATION MATRIX ---
-        ctx.save();
-        
-        // 1. Apply user panning
-        ctx.translate(this.camera.panX, this.camera.panY);
-        
-        // 2. Translate origin to center of canvas
-        ctx.translate(width / 2, height / 2);
-        
-        // 3. Apply Zoom scale
-        ctx.scale(this.camera.zoom, this.camera.zoom);
-        
-        // 4. Translate back to top-left to resume standard drawing logic
-        ctx.translate(-width / 2, -height / 2);
-
-        // --- DRAWING LOGIC ---
-        const paddingX = 40;
-        const drawWidth = width - (paddingX * 2);
-        const railHeight = 40;
-        const startY = height / 2 - railHeight / 2;
-        const scale = drawWidth / MAX_LENGTH_MM;
-        const currentDrawWidth = lengthMm * scale;
-
-        // Center Line
-        ctx.beginPath();
-        ctx.setLineDash([5, 5]);
-        ctx.strokeStyle = '#555';
-        ctx.moveTo(paddingX, height / 2);
-        ctx.lineTo(paddingX + drawWidth, height / 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Rail Body
-        ctx.fillStyle = '#95a5a6';
-        ctx.fillRect(paddingX, startY, currentDrawWidth, railHeight);
-
-        // Support Posts
-        ctx.fillStyle = '#f39c12';
-        for (let pos = 0; pos <= lengthMm; pos += POST_INTERVAL_MM) {
-            const postX = paddingX + (pos * scale);
-            ctx.fillRect(postX - 5, startY - 10, 10, railHeight + 20);
-            ctx.fillStyle = '#fff';
-            ctx.font = '10px monospace';
-            ctx.fillText(`${pos}mm`, postX - 15, startY - 15);
-            ctx.fillStyle = '#f39c12'; 
+        // Clear existing DOM securely
+        while (this.svg.firstChild) {
+            this.svg.removeChild(this.svg.firstChild);
         }
 
-        // Drill Holes
+        const topRailY = 0;
+        const bottomRailY = topRailY + RAIL_HEIGHT + RAIL_GAP;
+
+        // 1. Draw FR4 Insulator Posts (Back Layer)
+        for (let pos = 0; pos <= lengthMm; pos += POST_INTERVAL_MM) {
+            const postGroup = this.createNode('g', {});
+            
+            // FR4 Base Block
+            const fr4 = this.createNode('rect', {
+                x: pos - (POST_WIDTH / 2),
+                y: topRailY - 20,
+                width: POST_WIDTH,
+                height: POST_HEIGHT,
+                fill: '#5d6d7e', rx: 5
+            });
+            
+            // Mounting Bolt Details
+            const bolt1 = this.createNode('circle', { cx: pos, cy: topRailY - 10, r: 4, fill: '#bdc3c7' });
+            const bolt2 = this.createNode('circle', { cx: pos, cy: bottomRailY + RAIL_HEIGHT + 10, r: 4, fill: '#bdc3c7' });
+
+            postGroup.appendChild(fr4);
+            postGroup.appendChild(bolt1);
+            postGroup.appendChild(bolt2);
+            this.svg.appendChild(postGroup);
+        }
+
+        // 2. Draw Positive Rail (Top)
+        const posRail = this.createNode('rect', {
+            x: 0, y: topRailY, width: lengthMm, height: RAIL_HEIGHT,
+            fill: '#bdc3c7', stroke: '#e74c3c', 'stroke-width': 2 // Red outline for Positive
+        });
+        
+        // 3. Draw Negative Rail (Bottom)
+        const negRail = this.createNode('rect', {
+            x: 0, y: bottomRailY, width: lengthMm, height: RAIL_HEIGHT,
+            fill: '#bdc3c7', stroke: '#3498db', 'stroke-width': 2 // Blue outline for Negative
+        });
+
+        this.svg.appendChild(posRail);
+        this.svg.appendChild(negRail);
+
+        // 4. Draw Drill Holes
         if (holes > 0 && lengthMm > 0) {
-            ctx.fillStyle = '#1e1e24';
-            const spacing = currentDrawWidth / (holes + 1);
+            const spacing = lengthMm / (holes + 1);
             for (let i = 1; i <= holes; i++) {
-                const holeX = paddingX + (spacing * i);
-                ctx.beginPath();
-                ctx.arc(holeX, height / 2, 5, 0, Math.PI * 2);
-                ctx.fill();
+                const holeX = spacing * i;
+                // Top Rail Hole
+                this.svg.appendChild(this.createNode('circle', {
+                    cx: holeX, cy: topRailY + (RAIL_HEIGHT/2), r: 5, fill: '#1e1e24'
+                }));
+                // Bottom Rail Hole
+                this.svg.appendChild(this.createNode('circle', {
+                    cx: holeX, cy: bottomRailY + (RAIL_HEIGHT/2), r: 5, fill: '#1e1e24'
+                }));
             }
         }
+        
+        // 5. Draw Dimension Line
+        const dimGroup = this.createNode('g', { stroke: '#ff6b6b', 'stroke-width': 2 });
+        dimGroup.appendChild(this.createNode('line', { x1: 0, y1: bottomRailY + 100, x2: lengthMm, y2: bottomRailY + 100 }));
+        dimGroup.appendChild(this.createNode('line', { x1: 0, y1: bottomRailY + 80, x2: 0, y2: bottomRailY + 120 }));
+        dimGroup.appendChild(this.createNode('line', { x1: lengthMm, y1: bottomRailY + 80, x2: lengthMm, y2: bottomRailY + 120 }));
+        
+        const dimText = this.createNode('text', {
+            x: lengthMm / 2, y: bottomRailY + 90, fill: '#ff6b6b', 'text-anchor': 'middle', 'font-family': 'monospace', 'font-size': '24px', stroke: 'none'
+        });
+        dimText.textContent = `${lengthMm} mm Total Drop`;
+        dimGroup.appendChild(dimText);
 
-        // Dimension Line
-        ctx.strokeStyle = '#ff6b6b';
-        ctx.beginPath();
-        ctx.moveTo(paddingX, startY + railHeight + 30);
-        ctx.lineTo(paddingX + currentDrawWidth, startY + railHeight + 30);
-        ctx.stroke();
-
-        ctx.restore(); // Revert transformation matrix
+        this.svg.appendChild(dimGroup);
     }
 
     exportPDF() {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'landscape' });
-        const length = this.sanitizeNumeric(this.inputs.length.value, MAX_LENGTH_MM);
-        const notes = this.sanitizeString(this.inputs.specs.value);
+        const length = this.inputs.length.value;
+        const notes = this.inputs.specs.value.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
         doc.setFontSize(18);
-        doc.text("Power Rail - Cutting & Preparation Work Order", 15, 20);
+        doc.text("Dual-Bus Power Rail - Work Order", 15, 20);
         doc.setFontSize(12);
         doc.text(`Target Length: ${length} mm`, 15, 30);
-        doc.text(`Required Drill Holes: ${this.inputs.holes.value}`, 15, 40);
-        doc.text(`Support Posts Evaluated: ${Math.floor(length / POST_INTERVAL_MM) + 1}`, 15, 50);
+        doc.text(`Total Drill Holes: ${this.inputs.holes.value * 2} (${this.inputs.holes.value} per rail)`, 15, 40);
+        doc.text(`FR4 Insulator Posts Evaluated: ${Math.floor(length / POST_INTERVAL_MM) + 1}`, 15, 50);
         doc.text("Engineering Notes:", 15, 65);
-        
-        const splitNotes = doc.splitTextToSize(notes, 250);
-        doc.text(splitNotes, 15, 75);
+        doc.text(doc.splitTextToSize(notes, 250), 15, 75);
 
-        // SECURITY & QA: Snapshot must be perfectly framed.
-        // Cache the user's current camera state, force a recenter, render, capture, and restore.
-        const cachedCamera = { ...this.camera };
-        this.camera = { panX: 0, panY: 0, zoom: 1.0 };
-        this.render(); 
-        
-        const canvasData = this.canvas.toDataURL("image/png", 1.0);
-        doc.addImage(canvasData, 'PNG', 15, 120, 250, 60);
-        
-        this.camera = cachedCamera; 
-        this.render();      
+        // --- SVG TO PDF ARCHITECTURE ---
+        // 1. Temporarily reframe the viewBox to exactly fit the content, regardless of user zoom
+        const originalViewBox = this.svg.getAttribute('viewBox');
+        this.svg.setAttribute('viewBox', `-50 -50 ${parseInt(length) + 100} ${POST_HEIGHT + 150}`);
 
-        doc.save(`Rail_WorkOrder_${length}mm_${Date.now()}.pdf`);
+        // 2. Serialize SVG DOM to string
+        const svgData = new XMLSerializer().serializeToString(this.svg);
+        const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+        const url = URL.createObjectURL(svgBlob);
+        
+        // 3. Load into an Image object to rasterize it safely without external APIs
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill background so the PDF doesn't have a transparent/black box
+            ctx.fillStyle = '#2a2a35';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            
+            const pngData = canvas.toDataURL('image/png');
+            doc.addImage(pngData, 'PNG', 15, 120, 250, (canvas.height * 250) / canvas.width);
+            doc.save(`DualRail_WO_${length}mm_${Date.now()}.pdf`);
+            
+            // Restore user's camera view and cleanup
+            this.svg.setAttribute('viewBox', originalViewBox);
+            URL.revokeObjectURL(url);
+        };
+        img.src = url;
     }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    new RailDrafter();
+    new RailDrafterSVG();
 });
