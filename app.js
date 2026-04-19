@@ -2,9 +2,9 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_LENGTH_MM = 9998;
 const VISUAL_POST_INTERVAL_MM = 2000; 
 
-// SCALED Architectural Constants (4x)
-const RAIL_HEIGHT = 120; // 30 * 4
-const RAIL_GAP = 360;    // 90 * 4
+// Scaled Architectural Constants (4x)
+const RAIL_HEIGHT = 120; 
+const RAIL_GAP = 360;    
 const POST_WIDTH = 60;
 const POST_HEIGHT = (RAIL_HEIGHT * 2) + RAIL_GAP + 80; 
 const CONNECTOR_LENGTH = 715;
@@ -39,7 +39,14 @@ class RailDrafterSVG {
     }
 
     init() {
+        // Handle race conditions with requestAnimationFrame
+        requestAnimationFrame(() => {
+            this.resizeWorkspace();
+            this.renderAndRecenter();
+        });
+
         window.addEventListener('resize', () => this.resizeWorkspace());
+        
         this.ui.openBtn.addEventListener('click', () => this.toggleDrawer(true));
         this.ui.closeBtn.addEventListener('click', () => this.toggleDrawer(false));
         this.ui.overlay.addEventListener('click', () => this.toggleDrawer(false));
@@ -56,7 +63,12 @@ class RailDrafterSVG {
 
         this.bindCameraEvents();
         this.bindGestureEngine();
-        this.renderAndRecenter();
+    }
+
+    toggleDrawer(isOpen) {
+        this.isDrawerOpen = isOpen;
+        this.ui.drawer.classList.toggle('open', isOpen);
+        this.ui.overlay.classList.toggle('active', isOpen);
     }
 
     bindGestureEngine() {
@@ -65,18 +77,13 @@ class RailDrafterSVG {
         window.addEventListener('touchend', e => {
             let dx = e.changedTouches[0].clientX - tsX;
             let dy = e.changedTouches[0].clientY - tsY;
-            if (window.innerWidth > window.innerHeight) {
+            const isLandscape = window.innerWidth > window.innerHeight;
+            if (isLandscape) {
                 if (Math.abs(dx) > 70 && tsX > window.innerWidth - 80) this.toggleDrawer(dx < 0);
             } else {
                 if (Math.abs(dy) > 70 && tsY > window.innerHeight - 80) this.toggleDrawer(dy < 0);
             }
         }, {passive:true});
-    }
-
-    toggleDrawer(isOpen) {
-        this.isDrawerOpen = isOpen;
-        this.ui.drawer.classList.toggle('open', isOpen);
-        this.ui.overlay.classList.toggle('active', isOpen);
     }
 
     createNode(tag, attrs) {
@@ -103,7 +110,10 @@ class RailDrafterSVG {
         this.svg.addEventListener('wheel', e => { e.preventDefault(); this.adjustZoom(e.deltaY > 0 ? 1.1 : 0.9); }, {passive:false});
     }
 
-    applyCamera() { this.svg.setAttribute('viewBox', `${this.camera.x} ${this.camera.y} ${this.camera.width} ${this.camera.height}`); }
+    applyCamera() { 
+        if (isNaN(this.camera.x) || isNaN(this.camera.width)) return;
+        this.svg.setAttribute('viewBox', `${this.camera.x} ${this.camera.y} ${this.camera.width} ${this.camera.height}`); 
+    }
 
     adjustZoom(f) {
         const nw = this.camera.width * f; const nh = this.camera.height * f;
@@ -114,9 +124,11 @@ class RailDrafterSVG {
     renderAndRecenter() { this.render(); this.recenterCamera(); }
 
     recenterCamera() {
-        const pad = (this.boundingBox.maxX - this.boundingBox.minX) * 0.15;
-        this.camera.width = (this.boundingBox.maxX - this.boundingBox.minX) + (pad * 2);
-        this.camera.height = this.camera.width * (this.svg.clientHeight / this.svg.clientWidth);
+        const h = this.svg.clientHeight || 500;
+        const w = this.svg.clientWidth || 1000;
+        const pad = (this.boundingBox.maxX - this.boundingBox.minX) * 0.2;
+        this.camera.width = Math.max(100, (this.boundingBox.maxX - this.boundingBox.minX) + (pad * 2));
+        this.camera.height = this.camera.width * (h / w);
         this.camera.x = this.boundingBox.minX - pad;
         this.camera.y = this.boundingBox.minY - ((this.camera.height - (this.boundingBox.maxY - this.boundingBox.minY))/2);
         this.applyCamera();
@@ -124,25 +136,54 @@ class RailDrafterSVG {
 
     resizeWorkspace() { this.recenterCamera(); }
 
-    drawDim(x1, y, x2, txt, color, uiScale) {
+    /**
+     * CAD-Style Dimension Drawing
+     * Places text centered above the dimension line.
+     */
+    drawDim(x1, y, x2, txt, color, uiScale, isOffset = false) {
         const g = this.createNode('g', { stroke: color, 'stroke-width': 3 * uiScale });
+        const tickSize = 25 * uiScale;
+        
+        // Horizontal Line
         g.appendChild(this.createNode('line', { x1, y1: y, x2, y2: y }));
-        g.appendChild(this.createNode('line', { x1, y1: y-20*uiScale, x2: x1, y2: y+20*uiScale }));
-        g.appendChild(this.createNode('line', { x1: x2, y1: y-20*uiScale, x2: x2, y2: y+20*uiScale }));
-        const t = this.createNode('text', { x: x1+(x2-x1)/2, y: y-15*uiScale, fill: color, 'text-anchor': 'middle', 'font-size': `${24*uiScale}px`, stroke: 'none', 'font-family': 'monospace' });
-        t.textContent = txt; g.appendChild(t); return g;
+        // Vertical End Ticks
+        g.appendChild(this.createNode('line', { x1, y1: y - tickSize/2, x2: x1, y2: y + tickSize/2 }));
+        g.appendChild(this.createNode('line', { x1: x2, y1: y - tickSize/2, x2: x2, y2: y + tickSize/2 }));
+        
+        // Text Label
+        const t = this.createNode('text', { 
+            x: x1 + (x2 - x1) / 2, 
+            y: y - 10 * uiScale, 
+            fill: color, 
+            'text-anchor': 'middle', 
+            'font-size': `${26 * uiScale}px`, 
+            'font-family': 'monospace', 
+            stroke: 'none',
+            'font-weight': 'bold'
+        });
+        t.textContent = txt;
+        g.appendChild(t);
+        return g;
     }
 
     render() {
         const pLen = parseInt(this.inputs.posLength.value) || 0;
         const nLen = parseInt(this.inputs.negLength.value) || 0;
         const maxLen = Math.max(pLen, nLen);
-        const uiScale = Math.max(1.5, maxLen / 800);
+        const uiScale = Math.max(1.5, maxLen / 1200);
 
         while(this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
 
-        const topY = 0; const botY = topY + RAIL_HEIGHT + RAIL_GAP;
-        this.boundingBox = { minX: 0, maxX: maxLen, minY: -200 * uiScale, maxY: botY + 400 * uiScale };
+        const topY = 0; 
+        const botY = topY + RAIL_HEIGHT + RAIL_GAP;
+        
+        // Establish expanded bounding box to accommodate external dimension lines
+        this.boundingBox = { 
+            minX: 0, 
+            maxX: maxLen, 
+            minY: topY - 300 * uiScale, 
+            maxY: botY + RAIL_HEIGHT + 300 * uiScale 
+        };
 
         // 1. Posts
         const postOff = parseInt(this.inputs.postOffsetVal.value) || 0;
@@ -158,54 +199,65 @@ class RailDrafterSVG {
             const g = this.createNode('g', { opacity: isStruc ? 1 : 0.2 });
             g.appendChild(this.createNode('rect', { x: p-30, y: topY-40, width: 60, height: POST_HEIGHT, fill: '#555', rx: 5 }));
             if (isStruc) {
-                const t = this.createNode('text', { x: p, y: topY-60*uiScale, fill: '#fff', 'text-anchor': 'middle', 'font-size': `${18*uiScale}px` });
+                const t = this.createNode('text', { x: p, y: topY-150*uiScale, fill: '#fff', 'text-anchor': 'middle', 'font-size': `${20*uiScale}px`, 'font-family': 'monospace' });
                 t.textContent = `${p}mm`; g.appendChild(t);
             }
             this.svg.appendChild(g);
         });
 
         // 2. Rails
-        this.svg.appendChild(this.createNode('rect', { x: 0, y: topY, width: pLen, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#e74c3c', 'stroke-width': 4 }));
-        this.svg.appendChild(this.createNode('rect', { x: 0, y: botY, width: nLen, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#3498db', 'stroke-width': 4 }));
+        this.svg.appendChild(this.createNode('rect', { x: 0, y: topY, width: pLen, height: RAIL_HEIGHT, fill: '#777', stroke: '#e74c3c', 'stroke-width': 4 }));
+        this.svg.appendChild(this.createNode('rect', { x: 0, y: botY, width: nLen, height: RAIL_HEIGHT, fill: '#777', stroke: '#3498db', 'stroke-width': 4 }));
 
-        // 3. Connectors & Staggered Dimensions
+        // 3. Connectors & Off-Axis Offset Dimensions
         const drawConn = (off, y, color, side) => {
             if (isNaN(off) || off < 0) return;
-            const g = this.createNode('g', { opacity: 0.9 });
-            g.appendChild(this.createNode('rect', { x: off, y: y-10, width: CONNECTOR_LENGTH, height: RAIL_HEIGHT+20, fill: '#777', stroke: color, 'stroke-width': 3, rx: 5 }));
+            const g = this.createNode('g', { opacity: 1 });
+            // Splice Plate
+            g.appendChild(this.createNode('rect', { x: off, y: y-10, width: CONNECTOR_LENGTH, height: RAIL_HEIGHT+20, fill: '#999', stroke: color, 'stroke-width': 3, rx: 5 }));
+            // Drill Holes
             const step = CONNECTOR_LENGTH / 6;
-            for(let i=1; i<=5; i++) g.appendChild(this.createNode('circle', { cx: off + step*i, cy: y+RAIL_HEIGHT/2, r: 10*uiScale, fill: '#111' }));
+            for(let i=1; i<=5; i++) g.appendChild(this.createNode('circle', { cx: off + step*i, cy: y+RAIL_HEIGHT/2, r: 8*uiScale, fill: '#111' }));
             this.svg.appendChild(g);
-            this.svg.appendChild(this.drawDim(0, y + (side === 'top' ? -100*uiScale : RAIL_HEIGHT+100*uiScale), off, `${off}mm Offset`, color, uiScale));
+            
+            // External Offset Dimension
+            const dimY = (side === 'top') ? topY - 200 * uiScale : botY + RAIL_HEIGHT + 200 * uiScale;
+            this.svg.appendChild(this.drawDim(0, dimY, off, `${off}mm Offset`, color, uiScale));
         };
 
         drawConn(parseInt(this.inputs.posOffset.value), topY, '#e74c3c', 'top');
         drawConn(parseInt(this.inputs.negOffset.value), botY, '#3498db', 'bot');
 
-        // 4. Absolute Rail Dimensions (Staggered)
-        this.svg.appendChild(this.drawDim(0, topY + RAIL_HEIGHT/2, pLen, `POS: ${pLen}mm`, '#e74c3c', uiScale * 0.8));
-        this.svg.appendChild(this.drawDim(0, botY + RAIL_HEIGHT/2, nLen, `NEG: ${nLen}mm`, '#3498db', uiScale * 0.8));
+        // 4. Absolute Rail Dimensions (Staggered & External)
+        const pDimY = topY - 80 * uiScale;
+        const nDimY = botY + RAIL_HEIGHT + 80 * uiScale;
+        this.svg.appendChild(this.drawDim(0, pDimY, pLen, `POS: ${pLen}mm`, '#e74c3c', uiScale));
+        this.svg.appendChild(this.drawDim(0, nDimY, nLen, `NEG: ${nLen}mm`, '#3498db', uiScale));
     }
 
     exportPDF() {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'l', format: 'letter' });
-        doc.text("Asymmetric Power Rail Work Order", 15, 20);
-        doc.text(`POS Rail: ${this.inputs.posLength.value}mm | NEG Rail: ${this.inputs.negLength.value}mm`, 15, 30);
+        doc.setFontSize(16);
+        doc.text("Asymmetric CAD Rail Draft - Letter Format", 15, 20);
         
-        const vb = this.svg.getAttribute('viewBox');
+        const originalViewBox = this.svg.getAttribute('viewBox');
+        // Snapshot crop: focus on full bounding box
+        this.svg.setAttribute('viewBox', `${this.boundingBox.minX} ${this.boundingBox.minY} ${this.boundingBox.maxX - this.boundingBox.minX} ${this.boundingBox.maxY - this.boundingBox.minY}`);
+
         const svgData = new XMLSerializer().serializeToString(this.svg);
         const img = new Image();
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = img.width * 2; canvas.height = img.height * 2;
+            canvas.width = 2400; canvas.height = 1200; // High-res capture
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#2a2a35'; ctx.fillRect(0,0,canvas.width,canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            doc.addImage(canvas.toDataURL('image/png'), 'PNG', 15, 50, 250, 120);
-            doc.save(`Rail_WO_${Date.now()}.pdf`);
+            doc.addImage(canvas.toDataURL('image/png'), 'PNG', 15, 40, 250, 140);
+            doc.save(`Rail_CAD_WO_${Date.now()}.pdf`);
+            this.svg.setAttribute('viewBox', originalViewBox);
         };
-        img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+        img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
     }
 }
 new RailDrafterSVG();

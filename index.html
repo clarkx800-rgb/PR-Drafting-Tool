@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline';">
-    <title>Power Rail Drafter - Asymmetric</title>
+    <title>Power Rail Drafter - CAD Logic</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPh58iIqZxeemTGOBOsdTjHllGQ//iIqZhtIeUNiT24G4kHk5DkKaqoXy/E/1gHQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
@@ -18,19 +18,25 @@
             background: var(--bg-color); color: var(--text-color); overflow: hidden; 
         }
         .app-layout { display: flex; flex-direction: column; height: 100vh; width: 100vw; position: relative; }
+        
         .header {
             padding: 15px 20px; background: var(--panel-bg);
             border-bottom: 1px solid var(--border-color);
             display: flex; justify-content: space-between; align-items: center; z-index: 10;
         }
         .header h1 { margin: 0; font-size: 1.1rem; }
-        .workspace-area { flex-grow: 1; position: relative; background: var(--workspace-bg); overflow: hidden; }
+        
+        .workspace-area { 
+            flex-grow: 1; position: relative; background: var(--workspace-bg); 
+            overflow: hidden; min-height: 200px;
+        }
         svg#draftWorkspace { width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
         
         .fab-config {
             position: absolute; bottom: 20px; right: 20px;
             background: var(--accent); color: white; border: none; border-radius: 50%;
             width: 56px; height: 56px; font-size: 1.5rem; cursor: pointer; z-index: 10;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
 
         .camera-controls {
@@ -38,7 +44,7 @@
             display: flex; gap: 8px; background: rgba(30, 30, 36, 0.85);
             padding: 8px; border-radius: 8px; border: 1px solid #444; z-index: 5;
         }
-        .cam-btn { background: #444; color: white; border: none; width: 36px; height: 36px; cursor: pointer; }
+        .cam-btn { background: #444; color: white; border: none; width: 36px; height: 36px; cursor: pointer; border-radius: 4px; }
 
         .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); opacity: 0; pointer-events: none; transition: 0.3s; z-index: 99; }
         .drawer-overlay.active { opacity: 1; pointer-events: auto; }
@@ -47,34 +53,33 @@
             position: fixed; background: var(--panel-bg); z-index: 100; display: flex; flex-direction: column; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
-        /* Orientation Logic */
         @media (orientation: portrait) {
             .config-drawer { bottom: 0; left: 0; width: 100vw; height: 75vh; transform: translateY(100%); border-radius: 16px 16px 0 0; }
             .config-drawer.open { transform: translateY(0); }
-            .drawer-pull-tab { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); width: 50px; height: 20px; background: var(--panel-bg); border-radius: 8px 8px 0 0; }
+            .drawer-pull-tab { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); width: 50px; height: 20px; background: var(--panel-bg); border-radius: 8px 8px 0 0; border: 1px solid var(--border-color); border-bottom: none; }
         }
         @media (orientation: landscape) {
             .config-drawer { top: 0; right: 0; height: 100vh; width: 400px; transform: translateX(100%); }
             .config-drawer.open { transform: translateX(0); }
-            .drawer-pull-tab { position: absolute; top: 50%; left: -20px; transform: translateY(-50%); width: 20px; height: 50px; background: var(--panel-bg); border-radius: 8px 0 0 8px; }
+            .drawer-pull-tab { position: absolute; top: 50%; left: -20px; transform: translateY(-50%); width: 20px; height: 50px; background: var(--panel-bg); border-radius: 8px 0 0 8px; border: 1px solid var(--border-color); border-right: none; }
         }
 
-        .drawer-header { padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; }
+        .drawer-header { padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
         .drawer-body { padding: 20px; overflow-y: auto; flex-grow: 1; }
         .config-section { border-left: 3px solid #555; padding-left: 12px; margin-bottom: 20px; }
-        .config-section h3 { font-size: 0.75rem; color: #888; text-transform: uppercase; margin-bottom: 10px; }
+        .config-section h3 { font-size: 0.75rem; color: #888; text-transform: uppercase; margin: 0 0 10px 0; }
         .input-group { margin-bottom: 15px; }
         label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 5px; }
-        input, select, textarea { width: 100%; padding: 10px; background: #121212; border: 1px solid #444; color: white; border-radius: 4px; }
-        .primary-btn { background: var(--accent); color: white; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; }
+        input, select, textarea { width: 100%; padding: 10px; background: #121212; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; }
+        .primary-btn { background: var(--accent); color: white; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; border-radius: 4px; }
     </style>
 </head>
 <body>
 
 <div class="app-layout">
     <header class="header">
-        <h1>Asymmetric Rail Drafter</h1>
-        <div id="live-distance" style="font-size: 0.8rem; text-align: right;">Staggered Rails Enabled</div>
+        <h1>Asymmetric CAD Drafter</h1>
+        <div id="status" style="font-size: 0.8rem; color: #aaa;">Status: OK</div>
     </header>
 
     <div class="workspace-area">
@@ -91,7 +96,7 @@
 <div class="drawer-overlay" id="drawerOverlay"></div>
 <div class="config-drawer" id="configDrawer">
     <div class="drawer-pull-tab" id="pullTab"></div>
-    <div class="drawer-header"><h2>Config Matrix</h2><button class="close-btn" id="closeMenuBtn" style="background:none; border:none; color:white; cursor:pointer;">✕</button></div>
+    <div class="drawer-header"><h2>Config Matrix</h2><button id="closeMenuBtn" style="background:none; border:none; color:white; cursor:pointer; font-size: 1.2rem;">✕</button></div>
     <div class="drawer-body">
         <div class="config-section" style="border-color: #e74c3c;">
             <h3>Positive Rail (Top)</h3>
