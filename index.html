@@ -4,91 +4,88 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline';">
-    <title>Power Rail Drafter PWA</title>
+    <title>Power Rail Drafter</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPh58iIqZxeemTGOBOsdTjHllGQ//iIqZhtIeUNiT24G4kHk5DkKaqoXy/E/1gHQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         :root {
-            --bg-color: #1e1e24; --text-color: #f1f1f1; --accent: #ff6b6b;
-            --panel-bg: #2a2a35; --pos-color: #e74c3c; --neg-color: #3498db;
-            --fr4-color: #5d6d7e; --steel-color: #bdc3c7;
+            --bg-color: #121212; --panel-bg: #1e1e24; --workspace-bg: #2a2a35;
+            --text-color: #f1f1f1; --accent: #ff6b6b;
+            --border-color: #333;
         }
         body, html {
             margin: 0; padding: 0; height: 100%;
             font-family: 'Segoe UI', system-ui, sans-serif;
-            background: var(--bg-color); color: var(--text-color); overflow: hidden;
+            background: var(--bg-color); color: var(--text-color);
+            overflow: hidden; 
         }
-        .workspace-container {
-            display: flex; width: 100vw; height: 100vh;
-            overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
+        .app-layout {
+            display: flex; flex-direction: column; height: 100vh; width: 100vw;
         }
-        .panel {
-            min-width: 100vw; height: 100%; scroll-snap-align: start;
-            padding: 20px; box-sizing: border-box; display: flex; flex-direction: column;
-        }
-        @media (min-width: 768px) {
-            .workspace-container { overflow-x: hidden; scroll-snap-type: none; }
-            .panel { min-width: 50vw; border-right: 1px solid #333; }
-        }
-        .input-group { margin-bottom: 15px; }
-        label { display: block; font-size: 0.9rem; margin-bottom: 5px; color: #aaa;}
-        input, textarea {
-            width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #444;
-            background: var(--panel-bg); color: white; font-family: monospace; box-sizing: border-box;
-        }
-        button.primary-btn {
-            background: var(--accent); color: white; border: none;
-            padding: 15px; width: 100%; border-radius: 4px; cursor: pointer;
-            font-weight: bold; font-size: 1rem; text-transform: uppercase; margin-top: auto;
-        }
-        #canvas-panel { position: relative; }
-        .canvas-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;}
         
+        .header {
+            padding: 15px 20px; background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .header h1 { margin: 0; font-size: 1.2rem; }
+        #live-distance { color: var(--accent); font-family: monospace; font-size: 1.1rem; font-weight: bold; }
+
+        .workspace-area {
+            flex-grow: 1; position: relative; margin: 15px; 
+            background: var(--workspace-bg); border-radius: 8px;
+            border: 1px solid var(--border-color); overflow: hidden;
+        }
         svg#draftWorkspace {
-            background: var(--panel-bg); border-radius: 8px; flex-grow: 1;
             width: 100%; height: 100%; touch-action: none; cursor: grab; display: block;
         }
         svg#draftWorkspace:active { cursor: grabbing; }
 
         .camera-controls {
-            position: absolute; bottom: 40px; right: 40px;
-            display: flex; gap: 10px; background: rgba(30, 30, 36, 0.85);
-            padding: 10px; border-radius: 8px; backdrop-filter: blur(4px);
+            position: absolute; bottom: 20px; right: 20px;
+            display: flex; gap: 8px; background: rgba(30, 30, 36, 0.85);
+            padding: 8px; border-radius: 8px; backdrop-filter: blur(4px);
             border: 1px solid #444; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
         .cam-btn {
             background: #444; color: white; border: none; border-radius: 4px;
-            width: 40px; height: 40px; font-size: 1.2rem; cursor: pointer;
+            width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer;
             display: flex; align-items: center; justify-content: center;
         }
         .cam-btn:hover { background: var(--accent); }
+
+        .controls-area {
+            padding: 20px; background: var(--panel-bg);
+            border-top: 1px solid var(--border-color);
+            max-height: 40vh; overflow-y: auto;
+        }
+        .input-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px; margin-bottom: 15px;
+        }
+        .input-group { display: flex; flex-direction: column; }
+        label { font-size: 0.85rem; margin-bottom: 6px; color: #aaa; }
+        input, textarea {
+            width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #555;
+            background: var(--bg-color); color: white; font-family: monospace; box-sizing: border-box;
+        }
+        .action-row { display: flex; gap: 15px; }
+        button.primary-btn {
+            background: var(--accent); color: white; border: none;
+            padding: 15px; flex-grow: 1; border-radius: 4px; cursor: pointer;
+            font-weight: bold; font-size: 1rem; text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
 
-<div class="workspace-container">
-    <div class="panel" id="input-panel">
-        <h2>Rail Specification</h2>
-        <div class="input-group">
-            <label for="railLength">Total Length (mm) [Max: 9998]</label>
-            <input type="number" id="railLength" max="9998" min="0" value="9998" inputmode="numeric">
-        </div>
-        <div class="input-group">
-            <label for="holeCount">Required Drill Holes (Per Rail)</label>
-            <input type="number" id="holeCount" max="40" min="0" value="0" inputmode="numeric">
-        </div>
-        <div class="input-group">
-            <label for="specs">Engineering Notes & Specs</label>
-            <textarea id="specs" rows="6" placeholder="Enter FR4 specs, environmental tolerances..."></textarea>
-        </div>
-        <button id="exportPdfBtn" class="primary-btn">Export Work Order (PDF)</button>
-    </div>
+<div class="app-layout">
+    <header class="header">
+        <h1>Dual-Bus Drafter</h1>
+        <span id="live-distance">9998 mm</span>
+    </header>
 
-    <div class="panel" id="canvas-panel">
-        <div class="canvas-header">
-            <h2>Dual-Bus Draft</h2>
-            <span id="live-distance" style="color: var(--accent); font-family: monospace;">9998 mm</span>
-        </div>
+    <div class="workspace-area">
         <svg id="draftWorkspace" xmlns="http://www.w3.org/2000/svg"></svg>
         <div class="camera-controls">
             <button class="cam-btn" id="btn-zoom-out" title="Zoom Out">−</button>
@@ -96,8 +93,50 @@
             <button class="cam-btn" id="btn-zoom-in" title="Zoom In">+</button>
         </div>
     </div>
+
+    <div class="controls-area">
+        <div class="input-grid">
+            <div class="input-group">
+                <label for="railLength">Total Length (mm) [Max: 9998]</label>
+                <input type="number" id="railLength" max="9998" min="0" value="9998" inputmode="numeric">
+            </div>
+            <div class="input-group">
+                <label for="connectorOffset">5-Lug Connector Offset (mm from Post 0)</label>
+                <input type="number" id="connectorOffset" placeholder="e.g., 1500" inputmode="numeric">
+            </div>
+            <div class="input-group">
+                <label for="holeCount">Standard Custom Holes (Per Rail)</label>
+                <input type="number" id="holeCount" max="40" min="0" value="0" inputmode="numeric">
+            </div>
+        </div>
+        <div class="input-group" style="margin-bottom: 15px;">
+            <label for="specs">Engineering Notes & Specs</label>
+            <textarea id="specs" rows="2" placeholder="Enter FR4 specs, environmental tolerances..."></textarea>
+        </div>
+        <div class="action-row">
+            <button id="exportPdfBtn" class="primary-btn">Export Work Order (PDF)</button>
+        </div>
+    </div>
 </div>
 
 <script src="app.js"></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            const isDevEnvironment = window.location.hostname === 'localhost' || 
+                                     window.location.hostname === '127.0.0.1' || 
+                                     window.location.hostname.includes('.github.dev');
+
+            if (isDevEnvironment) {
+                console.warn("🔧 Dev Environment Detected: Service Worker bypassed to prevent caching.");
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                    for(let registration of registrations) { registration.unregister(); }
+                });
+            } else {
+                navigator.serviceWorker.register('/sw.js').catch(err => console.error('SW Error:', err));
+            }
+        });
+    }
+</script>
 </body>
 </html>

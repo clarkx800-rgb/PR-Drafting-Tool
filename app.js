@@ -2,11 +2,15 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_LENGTH_MM = 9998;
 const VISUAL_POST_INTERVAL_MM = 2000; 
 
-// Updated Architecture Constants
+// Architectural Constants
 const RAIL_HEIGHT = 30;
 const RAIL_GAP = 90; 
 const POST_WIDTH = 60;
 const POST_HEIGHT = (RAIL_HEIGHT * 2) + RAIL_GAP + 40; 
+
+// STL Component Constants
+const CONNECTOR_LENGTH = 715;
+const CONNECTOR_LUGS = 5;
 
 class RailDrafterSVG {
     constructor() {
@@ -15,6 +19,7 @@ class RailDrafterSVG {
         this.inputs = {
             length: document.getElementById('railLength'),
             holes: document.getElementById('holeCount'),
+            connectorOffset: document.getElementById('connectorOffset'),
             specs: document.getElementById('specs')
         };
         this.labels = { distance: document.getElementById('live-distance') };
@@ -31,6 +36,8 @@ class RailDrafterSVG {
         
         this.inputs.length.addEventListener('input', () => this.render());
         this.inputs.holes.addEventListener('input', () => this.render());
+        this.inputs.connectorOffset.addEventListener('input', () => this.render()); // Trigger render on offset change
+        
         document.getElementById('exportPdfBtn').addEventListener('click', () => this.exportPDF());
         
         document.getElementById('btn-zoom-in').addEventListener('click', () => this.adjustZoom(0.8));
@@ -115,6 +122,8 @@ class RailDrafterSVG {
     render() {
         const lengthMm = this.sanitizeNumeric(this.inputs.length.value, MAX_LENGTH_MM);
         const holes = this.sanitizeNumeric(this.inputs.holes.value, 40);
+        const connectorOffset = parseInt(this.inputs.connectorOffset.value, 10);
+        
         this.labels.distance.textContent = `${lengthMm} mm`;
 
         while (this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
@@ -122,22 +131,20 @@ class RailDrafterSVG {
         const topRailY = 0;
         const bottomRailY = topRailY + RAIL_HEIGHT + RAIL_GAP;
 
-        // 1. Calculate Post Positions (Absolute Ends + Visual Intermediates)
+        // --- 1. Draw FR4 Posts ---
         let postPositions = [];
         if (lengthMm >= 0) {
-            postPositions.push(0); // Absolute Start
+            postPositions.push(0); 
             for (let pos = VISUAL_POST_INTERVAL_MM; pos < lengthMm; pos += VISUAL_POST_INTERVAL_MM) {
                 postPositions.push(pos);
             }
-            if (lengthMm > 0) postPositions.push(lengthMm); // Absolute End
+            if (lengthMm > 0) postPositions.push(lengthMm); 
         }
 
-        // 2. Draw FR4 Insulator Posts
         postPositions.forEach((pos, index) => {
             const isStructural = (index === 0 || index === postPositions.length - 1);
             const postGroup = this.createNode('g', {});
             
-            // Render structural posts solid, visual posts slightly transparent
             const fr4 = this.createNode('rect', {
                 x: pos - (POST_WIDTH / 2), y: topRailY - 20,
                 width: POST_WIDTH, height: POST_HEIGHT,
@@ -152,7 +159,6 @@ class RailDrafterSVG {
             postGroup.appendChild(bolt1);
             postGroup.appendChild(bolt2);
 
-            // Label Structural Anchors
             if (isStructural) {
                 const text = this.createNode('text', {
                     x: pos, y: topRailY - 30, fill: '#fff', 'text-anchor': 'middle', 'font-family': 'monospace', 'font-size': '16px'
@@ -164,19 +170,52 @@ class RailDrafterSVG {
             this.svg.appendChild(postGroup);
         });
 
-        // 3. Draw Positive Rail (Top)
+        // --- 2. Draw Main Power Rails ---
         this.svg.appendChild(this.createNode('rect', {
             x: 0, y: topRailY, width: lengthMm, height: RAIL_HEIGHT,
             fill: '#bdc3c7', stroke: '#e74c3c', 'stroke-width': 2 
         }));
         
-        // 4. Draw Negative Rail (Bottom)
         this.svg.appendChild(this.createNode('rect', {
             x: 0, y: bottomRailY, width: lengthMm, height: RAIL_HEIGHT,
             fill: '#bdc3c7', stroke: '#3498db', 'stroke-width': 2 
         }));
 
-        // 5. Draw Drill Holes
+        // --- 3. Draw 5-Lug Connector (If Offset Provided) ---
+        if (!isNaN(connectorOffset) && connectorOffset >= 0) {
+            const connGroup = this.createNode('g', {});
+            
+            // Draw connector plates on both rails. Made slightly taller (+10px) to indicate an overlay plate.
+            connGroup.appendChild(this.createNode('rect', {
+                x: connectorOffset, y: topRailY - 5, width: CONNECTOR_LENGTH, height: RAIL_HEIGHT + 10,
+                fill: '#7f8c8d', stroke: '#e74c3c', 'stroke-width': 2, opacity: '0.85', rx: 4
+            }));
+            connGroup.appendChild(this.createNode('rect', {
+                x: connectorOffset, y: bottomRailY - 5, width: CONNECTOR_LENGTH, height: RAIL_HEIGHT + 10,
+                fill: '#7f8c8d', stroke: '#3498db', 'stroke-width': 2, opacity: '0.85', rx: 4
+            }));
+
+            // Calculate even distribution for 5 lugs across 715mm
+            const lugSpacing = CONNECTOR_LENGTH / (CONNECTOR_LUGS + 1);
+            for (let i = 1; i <= CONNECTOR_LUGS; i++) {
+                const lugX = connectorOffset + (lugSpacing * i);
+                // Top Connector Holes
+                connGroup.appendChild(this.createNode('circle', { cx: lugX, cy: topRailY + (RAIL_HEIGHT/2), r: 6, fill: '#1e1e24', stroke: '#ff6b6b', 'stroke-width': 1 }));
+                // Bottom Connector Holes
+                connGroup.appendChild(this.createNode('circle', { cx: lugX, cy: bottomRailY + (RAIL_HEIGHT/2), r: 6, fill: '#1e1e24', stroke: '#ff6b6b', 'stroke-width': 1 }));
+            }
+            
+            // Connector Dimension Label
+            const connText = this.createNode('text', {
+                x: connectorOffset + (CONNECTOR_LENGTH/2), y: topRailY - 15, fill: '#f1c40f', 'text-anchor': 'middle', 'font-family': 'monospace', 'font-size': '14px'
+            });
+            connText.textContent = `5-Lug Plate (715mm) @ ${connectorOffset}mm`;
+            connGroup.appendChild(connText);
+
+            this.svg.appendChild(connGroup);
+        }
+
+        // --- 4. Draw Custom Standard Holes ---
         if (holes > 0 && lengthMm > 0) {
             const spacing = lengthMm / (holes + 1);
             for (let i = 1; i <= holes; i++) {
@@ -186,7 +225,7 @@ class RailDrafterSVG {
             }
         }
         
-        // 6. Draw Dimension Line
+        // --- 5. Draw Total Dimension Line ---
         const dimGroup = this.createNode('g', { stroke: '#ff6b6b', 'stroke-width': 2 });
         dimGroup.appendChild(this.createNode('line', { x1: 0, y1: bottomRailY + 100, x2: lengthMm, y2: bottomRailY + 100 }));
         dimGroup.appendChild(this.createNode('line', { x1: 0, y1: bottomRailY + 80, x2: 0, y2: bottomRailY + 120 }));
@@ -205,19 +244,26 @@ class RailDrafterSVG {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({ orientation: 'landscape' });
         const length = this.inputs.length.value;
+        const connectorOffset = parseInt(this.inputs.connectorOffset.value, 10);
         const notes = this.inputs.specs.value.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
         doc.setFontSize(18);
         doc.text("Dual-Bus Power Rail - Work Order", 15, 20);
         doc.setFontSize(12);
         doc.text(`Target Length: ${length} mm`, 15, 30);
-        doc.text(`Total Drill Holes: ${this.inputs.holes.value * 2} (${this.inputs.holes.value} per rail)`, 15, 40);
-        
-        // UPDATED: Strictly report structural posts, ignore visual ones
+        doc.text(`Custom Drill Holes: ${this.inputs.holes.value * 2} (${this.inputs.holes.value} per rail)`, 15, 40);
         doc.text(`Structural FR4 Anchors Evaluated: 2 (Absolute 0mm & ${length}mm)`, 15, 50);
         
-        doc.text("Engineering Notes:", 15, 65);
-        doc.text(doc.splitTextToSize(notes, 250), 15, 75);
+        // Add Splice/Connector details to the manifest
+        if (!isNaN(connectorOffset) && connectorOffset >= 0) {
+            doc.text(`Hardware: 5-Lug Splice Connector (715mm)`, 15, 60);
+            doc.text(`Connector Drill Coordinates: Initiated at ${connectorOffset}mm from Anchor 0`, 15, 70);
+            doc.text("Engineering Notes:", 15, 85);
+            doc.text(doc.splitTextToSize(notes, 250), 15, 95);
+        } else {
+            doc.text("Engineering Notes:", 15, 65);
+            doc.text(doc.splitTextToSize(notes, 250), 15, 75);
+        }
 
         const originalViewBox = this.svg.getAttribute('viewBox');
         this.svg.setAttribute('viewBox', `-50 -50 ${parseInt(length) + 100} ${POST_HEIGHT + 150}`);
