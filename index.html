@@ -13,32 +13,22 @@
             --text-color: #f1f1f1;
             --accent: #ff6b6b;
             --rail-color: #95a5a6;
+            --panel-bg: #2a2a35;
         }
         body, html {
             margin: 0; padding: 0; height: 100%;
             font-family: 'Segoe UI', system-ui, sans-serif;
             background: var(--bg-color); color: var(--text-color);
-            overflow: hidden; /* Prevent native bounce */
+            overflow: hidden; 
         }
-        /* Mobile Swipe Architecture via CSS Scroll Snap */
         .workspace-container {
-            display: flex;
-            width: 100vw;
-            height: 100vh;
-            overflow-x: auto;
-            scroll-snap-type: x mandatory;
-            scroll-behavior: smooth;
+            display: flex; width: 100vw; height: 100vh;
+            overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
         }
         .panel {
-            min-width: 100vw;
-            height: 100%;
-            scroll-snap-align: start;
-            padding: 20px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
+            min-width: 100vw; height: 100%; scroll-snap-align: start;
+            padding: 20px; box-sizing: border-box; display: flex; flex-direction: column;
         }
-        /* Desktop Override */
         @media (min-width: 768px) {
             .workspace-container { overflow-x: hidden; scroll-snap-type: none; }
             .panel { min-width: 50vw; border-right: 1px solid #333; }
@@ -47,18 +37,34 @@
         label { display: block; font-size: 0.9rem; margin-bottom: 5px; color: #aaa;}
         input, textarea {
             width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #444;
-            background: #2a2a35; color: white; font-family: monospace; box-sizing: border-box;
+            background: var(--panel-bg); color: white; font-family: monospace; box-sizing: border-box;
         }
-        button {
+        button.primary-btn {
             background: var(--accent); color: white; border: none;
             padding: 15px; width: 100%; border-radius: 4px; cursor: pointer;
-            font-weight: bold; font-size: 1rem; text-transform: uppercase;
+            font-weight: bold; font-size: 1rem; text-transform: uppercase; margin-top: auto;
         }
-        canvas {
-            background: #2a2a35; border-radius: 8px; flex-grow: 1;
-            width: 100%; touch-action: none; /* Prevent scrolling while drawing */
-        }
+        /* Canvas Panel Specifics */
+        #canvas-panel { position: relative; } /* Required for absolute positioning of controls */
         .canvas-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;}
+        canvas {
+            background: var(--panel-bg); border-radius: 8px; flex-grow: 1;
+            width: 100%; touch-action: none; cursor: default;
+        }
+        /* Floating Camera Controls */
+        .camera-controls {
+            position: absolute; bottom: 40px; right: 40px;
+            display: flex; gap: 10px; background: rgba(30, 30, 36, 0.85);
+            padding: 10px; border-radius: 8px; backdrop-filter: blur(4px);
+            border: 1px solid #444; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .cam-btn {
+            background: #444; color: white; border: none; border-radius: 4px;
+            width: 40px; height: 40px; font-size: 1.2rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .cam-btn:hover { background: var(--accent); }
+        .cam-btn:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
@@ -76,9 +82,9 @@
         </div>
         <div class="input-group">
             <label for="specs">Engineering Notes & Specs</label>
-            <textarea id="specs" rows="6" placeholder="Enter environmental conditions, specific part numbers, etc..."></textarea>
+            <textarea id="specs" rows="6" placeholder="Enter environmental conditions, specific part numbers..."></textarea>
         </div>
-        <button id="exportPdfBtn">Export Work Order (PDF)</button>
+        <button id="exportPdfBtn" class="primary-btn">Export Work Order (PDF)</button>
     </div>
 
     <div class="panel" id="canvas-panel">
@@ -87,17 +93,20 @@
             <span id="live-distance" style="color: var(--accent); font-family: monospace;">9998 mm</span>
         </div>
         <canvas id="draftCanvas"></canvas>
+        
+        <div class="camera-controls">
+            <button class="cam-btn" id="btn-zoom-out" title="Zoom Out">−</button>
+            <button class="cam-btn" id="btn-recenter" title="Recenter View">⌖</button>
+            <button class="cam-btn" id="btn-zoom-in" title="Zoom In">+</button>
+        </div>
     </div>
 </div>
 
 <script src="app.js"></script>
 <script>
-    // PWA Service Worker Registration
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').catch(err => {
-                console.error('ServiceWorker registration failed: ', err);
-            });
+            navigator.serviceWorker.register('/sw.js').catch(err => console.error('SW Error:', err));
         });
     }
 </script>
