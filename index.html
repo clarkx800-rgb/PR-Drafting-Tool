@@ -10,18 +10,14 @@
     <style>
         :root {
             --bg-color: #121212; --panel-bg: #1e1e24; --workspace-bg: #2a2a35;
-            --text-color: #f1f1f1; --accent: #ff6b6b;
-            --border-color: #333;
+            --text-color: #f1f1f1; --accent: #ff6b6b; --border-color: #333;
         }
         body, html {
             margin: 0; padding: 0; height: 100%;
             font-family: 'Segoe UI', system-ui, sans-serif;
-            background: var(--bg-color); color: var(--text-color);
-            overflow: hidden; 
+            background: var(--bg-color); color: var(--text-color); overflow: hidden; 
         }
-        .app-layout {
-            display: flex; flex-direction: column; height: 100vh; width: 100vw;
-        }
+        .app-layout { display: flex; flex-direction: column; height: 100vh; width: 100vw; }
         
         .header {
             padding: 15px 20px; background: var(--panel-bg);
@@ -36,9 +32,7 @@
             background: var(--workspace-bg); border-radius: 8px;
             border: 1px solid var(--border-color); overflow: hidden;
         }
-        svg#draftWorkspace {
-            width: 100%; height: 100%; touch-action: none; cursor: grab; display: block;
-        }
+        svg#draftWorkspace { width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
         svg#draftWorkspace:active { cursor: grabbing; }
 
         .camera-controls {
@@ -57,19 +51,22 @@
         .controls-area {
             padding: 20px; background: var(--panel-bg);
             border-top: 1px solid var(--border-color);
-            max-height: 40vh; overflow-y: auto;
+            max-height: 45vh; overflow-y: auto;
         }
+        .config-section { border-left: 3px solid #555; padding-left: 12px; margin-bottom: 20px; }
+        .config-section h3 { margin: 0 0 10px 0; font-size: 0.9rem; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
         .input-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 15px; margin-bottom: 15px;
         }
         .input-group { display: flex; flex-direction: column; }
         label { font-size: 0.85rem; margin-bottom: 6px; color: #aaa; }
-        input, textarea {
+        input, select, textarea {
             width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #555;
             background: var(--bg-color); color: white; font-family: monospace; box-sizing: border-box;
         }
-        .action-row { display: flex; gap: 15px; }
+        select { appearance: none; cursor: pointer; }
+        .action-row { display: flex; gap: 15px; margin-top: 10px; }
         button.primary-btn {
             background: var(--accent); color: white; border: none;
             padding: 15px; flex-grow: 1; border-radius: 4px; cursor: pointer;
@@ -95,23 +92,55 @@
     </div>
 
     <div class="controls-area">
-        <div class="input-grid">
-            <div class="input-group">
-                <label for="railLength">Total Length (mm) [Max: 9998]</label>
-                <input type="number" id="railLength" max="9998" min="0" value="9998" inputmode="numeric">
-            </div>
-            <div class="input-group">
-                <label for="connectorOffset">5-Lug Connector Offset (mm from Post 0)</label>
-                <input type="number" id="connectorOffset" placeholder="e.g., 1500" inputmode="numeric">
-            </div>
-            <div class="input-group">
-                <label for="holeCount">Standard Custom Holes (Per Rail)</label>
-                <input type="number" id="holeCount" max="40" min="0" value="0" inputmode="numeric">
+        
+        <div class="config-section" style="border-color: #bdc3c7;">
+            <h3>Rail Geometry</h3>
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="railLength">Total Length (mm)</label>
+                    <input type="number" id="railLength" max="9998" min="0" value="9998" inputmode="numeric">
+                </div>
+                <div class="input-group">
+                    <label for="holeCount">Custom Holes (Per Rail)</label>
+                    <input type="number" id="holeCount" max="40" min="0" value="0" inputmode="numeric">
+                </div>
             </div>
         </div>
+
+        <div class="config-section" style="border-color: #f39c12;">
+            <h3>5-Lug Splice Connectors</h3>
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="posOffset">Positive (Top) Offset (mm)</label>
+                    <input type="number" id="posOffset" placeholder="Blank for none" inputmode="numeric">
+                </div>
+                <div class="input-group">
+                    <label for="negOffset">Negative (Bottom) Offset (mm)</label>
+                    <input type="number" id="negOffset" placeholder="Blank for none" inputmode="numeric">
+                </div>
+            </div>
+        </div>
+
+        <div class="config-section" style="border-color: #5d6d7e;">
+            <h3>Structural Post Anchors</h3>
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="postOffsetVal">Anchor Offset (mm)</label>
+                    <input type="number" id="postOffsetVal" value="0" inputmode="numeric">
+                </div>
+                <div class="input-group">
+                    <label for="postOffsetRef">Offset Reference Tip</label>
+                    <select id="postOffsetRef">
+                        <option value="left">Left Tip (0mm Start)</option>
+                        <option value="right">Right Tip (Rail End)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
         <div class="input-group" style="margin-bottom: 15px;">
-            <label for="specs">Engineering Notes & Specs</label>
-            <textarea id="specs" rows="2" placeholder="Enter FR4 specs, environmental tolerances..."></textarea>
+            <label for="specs">Engineering Notes</label>
+            <textarea id="specs" rows="2" placeholder="Tolerances, hardware revs..."></textarea>
         </div>
         <div class="action-row">
             <button id="exportPdfBtn" class="primary-btn">Export Work Order (PDF)</button>
@@ -123,17 +152,11 @@
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            const isDevEnvironment = window.location.hostname === 'localhost' || 
-                                     window.location.hostname === '127.0.0.1' || 
-                                     window.location.hostname.includes('.github.dev');
-
-            if (isDevEnvironment) {
-                console.warn("🔧 Dev Environment Detected: Service Worker bypassed to prevent caching.");
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                    for(let registration of registrations) { registration.unregister(); }
-                });
+            const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.includes('.github.dev');
+            if (isDev) {
+                navigator.serviceWorker.getRegistrations().then(r => r.forEach(reg => reg.unregister()));
             } else {
-                navigator.serviceWorker.register('/sw.js').catch(err => console.error('SW Error:', err));
+                navigator.serviceWorker.register('/sw.js').catch(err => console.error(err));
             }
         });
     }
