@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline';">
-    <title>Power Rail Drafter</title>
+    <title>Power Rail Drafter - Asymmetric</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPh58iIqZxeemTGOBOsdTjHllGQ//iIqZhtIeUNiT24G4kHk5DkKaqoXy/E/1gHQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
@@ -18,200 +18,101 @@
             background: var(--bg-color); color: var(--text-color); overflow: hidden; 
         }
         .app-layout { display: flex; flex-direction: column; height: 100vh; width: 100vw; position: relative; }
-        
         .header {
             padding: 15px 20px; background: var(--panel-bg);
             border-bottom: 1px solid var(--border-color);
             display: flex; justify-content: space-between; align-items: center; z-index: 10;
         }
-        .header h1 { margin: 0; font-size: 1.2rem; }
-        #live-distance { color: var(--accent); font-family: monospace; font-size: 1.1rem; font-weight: bold; }
-        
-        /* Workspace */
-        .workspace-area {
-            flex-grow: 1; position: relative; background: var(--workspace-bg); 
-            overflow: hidden; width: 100%;
-        }
+        .header h1 { margin: 0; font-size: 1.1rem; }
+        .workspace-area { flex-grow: 1; position: relative; background: var(--workspace-bg); overflow: hidden; }
         svg#draftWorkspace { width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
-        svg#draftWorkspace:active { cursor: grabbing; }
-
-        /* Floating UI Elements */
+        
         .fab-config {
             position: absolute; bottom: 20px; right: 20px;
             background: var(--accent); color: white; border: none; border-radius: 50%;
-            width: 56px; height: 56px; font-size: 1.5rem; cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 10;
-            display: flex; align-items: center; justify-content: center; transition: transform 0.1s;
+            width: 56px; height: 56px; font-size: 1.5rem; cursor: pointer; z-index: 10;
         }
-        .fab-config:active { transform: scale(0.9); }
 
         .camera-controls {
             position: absolute; bottom: 28px; right: 90px;
             display: flex; gap: 8px; background: rgba(30, 30, 36, 0.85);
-            padding: 8px; border-radius: 8px; backdrop-filter: blur(4px);
-            border: 1px solid #444; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 5;
+            padding: 8px; border-radius: 8px; border: 1px solid #444; z-index: 5;
         }
-        .cam-btn {
-            background: #444; color: white; border: none; border-radius: 4px;
-            width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer;
-        }
-        .cam-btn:hover { background: var(--accent); }
+        .cam-btn { background: #444; color: white; border: none; width: 36px; height: 36px; cursor: pointer; }
 
-        /* --- RESPONSIVE DRAWER ARCHITECTURE --- */
-        .drawer-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
-            opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 99;
-        }
+        .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); opacity: 0; pointer-events: none; transition: 0.3s; z-index: 99; }
         .drawer-overlay.active { opacity: 1; pointer-events: auto; }
 
-        /* Base Form Inputs */
-        .drawer-header {
-            padding: 20px; border-bottom: 1px solid var(--border-color);
-            display: flex; justify-content: space-between; align-items: center; background: #1a1a20;
-        }
-        .drawer-header h2 { margin: 0; font-size: 1.2rem; color: white; }
-        .close-btn { background: none; border: none; color: #aaa; font-size: 1.5rem; cursor: pointer; }
-        .drawer-body { padding: 20px; overflow-y: auto; flex-grow: 1; }
-        .config-section { border-left: 3px solid #555; padding-left: 12px; margin-bottom: 25px; }
-        .config-section h3 { margin: 0 0 12px 0; font-size: 0.85rem; color: #ccc; text-transform: uppercase; letter-spacing: 1px; }
-        .input-group { margin-bottom: 12px; }
-        label { display: block; font-size: 0.85rem; margin-bottom: 6px; color: #aaa; }
-        input, select, textarea {
-            width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #555;
-            background: var(--bg-color); color: white; font-family: monospace; box-sizing: border-box;
-        }
-        .drawer-footer { padding: 20px; border-top: 1px solid var(--border-color); background: #1a1a20; }
-        button.primary-btn {
-            background: var(--accent); color: white; border: none; width: 100%;
-            padding: 15px; border-radius: 4px; cursor: pointer; font-weight: bold; text-transform: uppercase;
-        }
-
-        /* Default: Portrait / Vertical Layout */
         .config-drawer {
-            position: fixed; bottom: 0; left: 0; width: 100vw; height: 75vh;
-            background: var(--panel-bg); box-shadow: 0 -5px 25px rgba(0,0,0,0.8);
-            transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            z-index: 100; display: flex; flex-direction: column;
-            border-top-left-radius: 16px; border-top-right-radius: 16px;
+            position: fixed; background: var(--panel-bg); z-index: 100; display: flex; flex-direction: column; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .config-drawer.open { transform: translateY(0); }
-
-        .drawer-pull-tab {
-            position: absolute; top: -25px; left: 50%; transform: translateX(-50%);
-            width: 60px; height: 25px; background: var(--panel-bg);
-            border-top-left-radius: 8px; border-top-right-radius: 8px;
-            display: flex; justify-content: center; align-items: center;
-            cursor: pointer; box-shadow: 0 -2px 10px rgba(0,0,0,0.3); z-index: 101;
+        
+        /* Orientation Logic */
+        @media (orientation: portrait) {
+            .config-drawer { bottom: 0; left: 0; width: 100vw; height: 75vh; transform: translateY(100%); border-radius: 16px 16px 0 0; }
+            .config-drawer.open { transform: translateY(0); }
+            .drawer-pull-tab { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); width: 50px; height: 20px; background: var(--panel-bg); border-radius: 8px 8px 0 0; }
         }
-        .drawer-pull-tab::after { content: ''; width: 30px; height: 4px; background: #666; border-radius: 2px; }
-
-        /* Override: Landscape / Wide Layout */
         @media (orientation: landscape) {
-            .config-drawer {
-                top: 0; right: 0; bottom: auto; left: auto;
-                height: 100vh; width: min(400px, 100vw);
-                transform: translateX(100%); box-shadow: -5px 0 25px rgba(0,0,0,0.8);
-                border-radius: 0;
-            }
+            .config-drawer { top: 0; right: 0; height: 100vh; width: 400px; transform: translateX(100%); }
             .config-drawer.open { transform: translateX(0); }
-
-            .drawer-pull-tab {
-                top: 50%; left: -25px; bottom: auto; right: auto;
-                transform: translateY(-50%);
-                width: 25px; height: 60px;
-                border-radius: 0; border-top-left-radius: 8px; border-bottom-left-radius: 8px;
-            }
-            .drawer-pull-tab::after { width: 4px; height: 30px; }
+            .drawer-pull-tab { position: absolute; top: 50%; left: -20px; transform: translateY(-50%); width: 20px; height: 50px; background: var(--panel-bg); border-radius: 8px 0 0 8px; }
         }
+
+        .drawer-header { padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; }
+        .drawer-body { padding: 20px; overflow-y: auto; flex-grow: 1; }
+        .config-section { border-left: 3px solid #555; padding-left: 12px; margin-bottom: 20px; }
+        .config-section h3 { font-size: 0.75rem; color: #888; text-transform: uppercase; margin-bottom: 10px; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 5px; }
+        input, select, textarea { width: 100%; padding: 10px; background: #121212; border: 1px solid #444; color: white; border-radius: 4px; }
+        .primary-btn { background: var(--accent); color: white; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="app-layout">
     <header class="header">
-        <h1>Dual-Bus Drafter</h1>
-        <span id="live-distance">9998 mm</span>
+        <h1>Asymmetric Rail Drafter</h1>
+        <div id="live-distance" style="font-size: 0.8rem; text-align: right;">Staggered Rails Enabled</div>
     </header>
 
     <div class="workspace-area">
         <svg id="draftWorkspace" xmlns="http://www.w3.org/2000/svg"></svg>
         <div class="camera-controls">
-            <button class="cam-btn" id="btn-zoom-out" title="Zoom Out">−</button>
-            <button class="cam-btn" id="btn-recenter" title="Recenter View">⌖</button>
-            <button class="cam-btn" id="btn-zoom-in" title="Zoom In">+</button>
+            <button class="cam-btn" id="btn-zoom-out">−</button>
+            <button class="cam-btn" id="btn-recenter">⌖</button>
+            <button class="cam-btn" id="btn-zoom-in">+</button>
         </div>
-        <button class="fab-config" id="openMenuBtn" title="Configuration">⚙️</button>
+        <button class="fab-config" id="openMenuBtn">⚙️</button>
     </div>
 </div>
 
 <div class="drawer-overlay" id="drawerOverlay"></div>
 <div class="config-drawer" id="configDrawer">
     <div class="drawer-pull-tab" id="pullTab"></div>
-
-    <div class="drawer-header">
-        <h2>Draft Settings</h2>
-        <button class="close-btn" id="closeMenuBtn">✕</button>
-    </div>
-    
+    <div class="drawer-header"><h2>Config Matrix</h2><button class="close-btn" id="closeMenuBtn" style="background:none; border:none; color:white; cursor:pointer;">✕</button></div>
     <div class="drawer-body">
-        <div class="config-section" style="border-color: #bdc3c7;">
-            <h3>Rail Geometry</h3>
-            <div class="input-group">
-                <label for="railLength">Total Length (mm)</label>
-                <input type="number" id="railLength" max="9998" min="0" value="9998" inputmode="numeric">
-            </div>
+        <div class="config-section" style="border-color: #e74c3c;">
+            <h3>Positive Rail (Top)</h3>
+            <div class="input-group"><label>Length (mm)</label><input type="number" id="posLength" value="9998"></div>
+            <div class="input-group"><label>5-Lug Offset (mm)</label><input type="number" id="posOffset" placeholder="None"></div>
         </div>
-
-        <div class="config-section" style="border-color: #f39c12;">
-            <h3>5-Lug Splice Connectors</h3>
-            <div class="input-group">
-                <label for="posOffset">Positive (Top) Offset (mm)</label>
-                <input type="number" id="posOffset" placeholder="Blank for none" inputmode="numeric">
-            </div>
-            <div class="input-group">
-                <label for="negOffset">Negative (Bottom) Offset (mm)</label>
-                <input type="number" id="negOffset" placeholder="Blank for none" inputmode="numeric">
-            </div>
+        <div class="config-section" style="border-color: #3498db;">
+            <h3>Negative Rail (Bottom)</h3>
+            <div class="input-group"><label>Length (mm)</label><input type="number" id="negLength" value="9000"></div>
+            <div class="input-group"><label>5-Lug Offset (mm)</label><input type="number" id="negOffset" placeholder="None"></div>
         </div>
-
         <div class="config-section" style="border-color: #5d6d7e;">
-            <h3>Structural Post Anchors</h3>
-            <div class="input-group">
-                <label for="postOffsetVal">Anchor Offset (mm)</label>
-                <input type="number" id="postOffsetVal" value="0" inputmode="numeric">
-            </div>
-            <div class="input-group">
-                <label for="postOffsetRef">Offset Reference Tip</label>
-                <select id="postOffsetRef">
-                    <option value="left">Left Tip (0mm Start)</option>
-                    <option value="right">Right Tip (Rail End)</option>
-                </select>
-            </div>
+            <h3>Supports</h3>
+            <div class="input-group"><label>Anchor Offset (mm)</label><input type="number" id="postOffsetVal" value="0"></div>
+            <div class="input-group"><label>Reference</label><select id="postOffsetRef"><option value="left">Left Tip</option><option value="right">Right Tip</option></select></div>
         </div>
-
-        <div class="input-group">
-            <label for="specs">Engineering Notes</label>
-            <textarea id="specs" rows="3" placeholder="Tolerances, hardware revs..."></textarea>
-        </div>
+        <textarea id="specs" rows="3" placeholder="Notes..."></textarea>
     </div>
-
-    <div class="drawer-footer">
-        <button id="exportPdfBtn" class="primary-btn">Export Work Order (PDF)</button>
-    </div>
+    <div class="drawer-footer" style="padding:20px;"><button id="exportPdfBtn" class="primary-btn">EXPORT LETTER PDF</button></div>
 </div>
 
 <script src="app.js"></script>
-<script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.includes('.github.dev');
-            if (isDev) {
-                navigator.serviceWorker.getRegistrations().then(r => r.forEach(reg => reg.unregister()));
-            } else {
-                navigator.serviceWorker.register('/sw.js').catch(err => console.error(err));
-            }
-        });
-    }
-</script>
 </body>
 </html>
