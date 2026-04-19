@@ -1,4 +1,4 @@
-const CACHE_NAME = 'raildraft-v2-secure'; // Incremented cache version
+const CACHE_NAME = 'raildraft-v3-secure';
 const ASSETS_TO_CACHE = [
     '/',
     '/index.html',
