@@ -2,7 +2,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_LENGTH_MM = 9998;
 const VISUAL_POST_INTERVAL_MM = 2000; 
 
-// Architectural Constants
+// Architectural Geometry Constants (These represent TRUE 1:1 Physical Math)
 const RAIL_HEIGHT = 30;
 const RAIL_GAP = 90; 
 const POST_WIDTH = 60;
@@ -14,7 +14,6 @@ class RailDrafterSVG {
     constructor() {
         this.svg = document.getElementById('draftWorkspace');
         
-        // Dynamic Input Matrix
         this.inputs = {
             length: document.getElementById('railLength'),
             holes: document.getElementById('holeCount'),
@@ -29,17 +28,18 @@ class RailDrafterSVG {
         this.camera = { x: 0, y: 0, width: 1000, height: 1000 };
         this.drag = { active: false, startX: 0, startY: 0, startCamX: 0, startCamY: 0 };
         
+        // Expose bounds for PDF capture framing
+        this.boundingBox = { minX: 0, maxX: 1000, minY: 0, maxY: 1000 };
+
         this.init();
     }
 
     init() {
-        this.resizeWorkspace();
         window.addEventListener('resize', () => this.resizeWorkspace());
         
-        // Bind all inputs to trigger live render
         Object.values(this.inputs).forEach(input => {
             if(input.tagName === 'INPUT' || input.tagName === 'SELECT') {
-                input.addEventListener('input', () => this.render());
+                input.addEventListener('input', () => this.renderAndRecenter());
             }
         });
         
@@ -50,7 +50,7 @@ class RailDrafterSVG {
         document.getElementById('btn-recenter').addEventListener('click', () => this.recenterCamera());
 
         this.bindCameraEvents();
-        this.render();
+        this.renderAndRecenter();
     }
 
     createNode(tag, attributes) {
@@ -92,7 +92,9 @@ class RailDrafterSVG {
         }, { passive: false });
     }
 
-    applyCamera() { this.svg.setAttribute('viewBox', `${this.camera.x} ${this.camera.y} ${this.camera.width} ${this.camera.height}`); }
+    applyCamera() { 
+        this.svg.setAttribute('viewBox', `${this.camera.x} ${this.camera.y} ${this.camera.width} ${this.camera.height}`); 
+    }
 
     adjustZoom(factor) {
         const newWidth = this.camera.width * factor;
@@ -104,12 +106,25 @@ class RailDrafterSVG {
         this.applyCamera();
     }
 
+    renderAndRecenter() {
+        this.render();
+        this.recenterCamera();
+    }
+
     recenterCamera() {
-        const lengthMm = this.sanitizeNumeric(this.inputs.length.value, MAX_LENGTH_MM);
-        this.camera.width = lengthMm + 400; 
-        this.camera.height = this.camera.width * (this.svg.clientHeight / this.svg.clientWidth);
-        this.camera.x = -200;
-        this.camera.y = -(this.camera.height / 2) + 100;
+        // Automatically frame the camera to fit the bounding box (which includes our dynamic text)
+        const padX = (this.boundingBox.maxX - this.boundingBox.minX) * 0.1;
+        const padY = (this.boundingBox.maxY - this.boundingBox.minY) * 0.1;
+        
+        this.camera.width = (this.boundingBox.maxX - this.boundingBox.minX) + (padX * 2);
+        
+        const aspect = this.svg.clientHeight / this.svg.clientWidth;
+        this.camera.height = this.camera.width * aspect;
+        
+        // Center the camera over the bounding box
+        this.camera.x = this.boundingBox.minX - padX;
+        this.camera.y = this.boundingBox.minY - ((this.camera.height - (this.boundingBox.maxY - this.boundingBox.minY)) / 2);
+        
         this.applyCamera();
     }
 
@@ -120,24 +135,23 @@ class RailDrafterSVG {
         return (isNaN(parsed) || parsed < 0) ? 0 : Math.min(parsed, max);
     }
 
-    // Handles optional inputs (blanks) securely
     getOptionalNumeric(val) {
         let parsed = parseInt(val, 10);
         return isNaN(parsed) ? null : parsed;
     }
 
-    // CAD-Style Dimensioning Tool
-    drawDimension(x1, y, x2, labelText, color) {
-        const dimGroup = this.createNode('g', { stroke: color, 'stroke-width': 2 });
-        // Main Line
+    drawDimension(x1, y, x2, labelText, color, uiScale) {
+        const dimGroup = this.createNode('g', { stroke: color, 'stroke-width': 2 * uiScale });
+        const tickHeight = 15 * uiScale;
+        const fontSize = 18 * uiScale;
+
         dimGroup.appendChild(this.createNode('line', { x1: x1, y1: y, x2: x2, y2: y }));
-        // Edge Tick Marks
-        dimGroup.appendChild(this.createNode('line', { x1: x1, y1: y - 10, x2: x1, y2: y + 10 }));
-        dimGroup.appendChild(this.createNode('line', { x1: x2, y1: y - 10, x2: x2, y2: y + 10 }));
-        // Text
+        dimGroup.appendChild(this.createNode('line', { x1: x1, y1: y - tickHeight, x2: x1, y2: y + tickHeight }));
+        dimGroup.appendChild(this.createNode('line', { x1: x2, y1: y - tickHeight, x2: x2, y2: y + tickHeight }));
+        
         const dimText = this.createNode('text', {
-            x: x1 + ((x2 - x1) / 2), y: y - 10, fill: color, 
-            'text-anchor': 'middle', 'font-family': 'monospace', 'font-size': '18px', stroke: 'none'
+            x: x1 + ((x2 - x1) / 2), y: y - (tickHeight * 0.8), fill: color, 
+            'text-anchor': 'middle', 'font-family': 'monospace', 'font-size': `${fontSize}px`, stroke: 'none'
         });
         dimText.textContent = labelText;
         dimGroup.appendChild(dimText);
@@ -147,36 +161,33 @@ class RailDrafterSVG {
     render() {
         const lengthMm = this.sanitizeNumeric(this.inputs.length.value, MAX_LENGTH_MM);
         const holes = this.sanitizeNumeric(this.inputs.holes.value, 40);
-        
         const posOffset = this.getOptionalNumeric(this.inputs.posOffset.value);
         const negOffset = this.getOptionalNumeric(this.inputs.negOffset.value);
-        
         const postOffsetVal = this.sanitizeNumeric(this.inputs.postOffsetVal.value, MAX_LENGTH_MM);
-        const postOffsetRef = this.inputs.postOffsetRef.value; // 'left' or 'right'
+        const postOffsetRef = this.inputs.postOffsetRef.value;
 
         this.labels.distance.textContent = `${lengthMm} mm`;
 
         while (this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
 
+        // --- DYNAMIC SCALING ALGORITHM ---
+        // As the rail gets longer, text and offsets must scale up to remain legible when exported to 11x8.5 paper
+        const uiScale = Math.max(1, lengthMm / 1000); 
+
         const topRailY = 0;
         const bottomRailY = topRailY + RAIL_HEIGHT + RAIL_GAP;
 
-        // --- 1. Bidirectional Post Propagation Math ---
+        // Reset Bounding Box Tracking for the Camera
+        this.boundingBox = { minX: 0, maxX: lengthMm, minY: topRailY - (80 * uiScale), maxY: bottomRailY + (120 * uiScale) };
+
+        // --- 1. Bidirectional Post Propagation ---
         let postPositions = [];
         if (lengthMm >= 0) {
-            // Clamp starting offset to not exceed total rail length
             let clampedOffset = Math.min(postOffsetVal, lengthMm);
-            
             if (postOffsetRef === 'right') {
-                // Propagate from right to left
-                for (let pos = lengthMm - clampedOffset; pos >= 0; pos -= VISUAL_POST_INTERVAL_MM) {
-                    postPositions.unshift(pos); // Unshift maintains left-to-right drawing order
-                }
+                for (let pos = lengthMm - clampedOffset; pos >= 0; pos -= VISUAL_POST_INTERVAL_MM) { postPositions.unshift(pos); }
             } else {
-                // Propagate from left to right
-                for (let pos = clampedOffset; pos <= lengthMm; pos += VISUAL_POST_INTERVAL_MM) {
-                    postPositions.push(pos);
-                }
+                for (let pos = clampedOffset; pos <= lengthMm; pos += VISUAL_POST_INTERVAL_MM) { postPositions.push(pos); }
             }
         }
 
@@ -185,20 +196,16 @@ class RailDrafterSVG {
             const isStructural = (index === 0 || index === postPositions.length - 1);
             const postGroup = this.createNode('g', {});
             
-            const fr4 = this.createNode('rect', {
+            postGroup.appendChild(this.createNode('rect', {
                 x: pos - (POST_WIDTH / 2), y: topRailY - 20, width: POST_WIDTH, height: POST_HEIGHT,
                 fill: '#5d6d7e', rx: 5, opacity: isStructural ? "1.0" : "0.3" 
-            });
-            const bolt1 = this.createNode('circle', { cx: pos, cy: topRailY - 10, r: 4, fill: '#bdc3c7', opacity: isStructural ? "1.0" : "0.3" });
-            const bolt2 = this.createNode('circle', { cx: pos, cy: bottomRailY + RAIL_HEIGHT + 10, r: 4, fill: '#bdc3c7', opacity: isStructural ? "1.0" : "0.3" });
-
-            postGroup.appendChild(fr4);
-            postGroup.appendChild(bolt1);
-            postGroup.appendChild(bolt2);
-
+            }));
+            
+            // Scaled Text for Posts
             if (isStructural) {
                 const text = this.createNode('text', {
-                    x: pos, y: topRailY - 30, fill: '#fff', 'text-anchor': 'middle', 'font-family': 'monospace', 'font-size': '16px'
+                    x: pos, y: topRailY - (40 * uiScale), fill: '#fff', 
+                    'text-anchor': 'middle', 'font-family': 'monospace', 'font-size': `${16 * uiScale}px`
                 });
                 text.textContent = `ANCHOR: ${pos}mm`;
                 postGroup.appendChild(text);
@@ -208,58 +215,64 @@ class RailDrafterSVG {
 
         // --- 3. Draw Main Power Rails ---
         this.svg.appendChild(this.createNode('rect', {
-            x: 0, y: topRailY, width: lengthMm, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#e74c3c', 'stroke-width': 2 
+            x: 0, y: topRailY, width: lengthMm, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#e74c3c', 'stroke-width': 2 * uiScale 
         }));
         this.svg.appendChild(this.createNode('rect', {
-            x: 0, y: bottomRailY, width: lengthMm, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#3498db', 'stroke-width': 2 
+            x: 0, y: bottomRailY, width: lengthMm, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#3498db', 'stroke-width': 2 * uiScale 
         }));
 
-        // --- 4. Draw 5-Lug Connectors (Independent Rails) ---
+        // --- 4. Draw 5-Lug Connectors ---
         const drawConnector = (railOffset, baseRailY, railColor, dimYOffset) => {
             if (railOffset !== null && railOffset >= 0) {
                 const connGroup = this.createNode('g', {});
-                // Plate Body
                 connGroup.appendChild(this.createNode('rect', {
                     x: railOffset, y: baseRailY - 5, width: CONNECTOR_LENGTH, height: RAIL_HEIGHT + 10,
-                    fill: '#7f8c8d', stroke: railColor, 'stroke-width': 2, opacity: '0.85', rx: 4
+                    fill: '#7f8c8d', stroke: railColor, 'stroke-width': 2 * uiScale, opacity: '0.85', rx: 4
                 }));
-                // Drill Distribution
                 const lugSpacing = CONNECTOR_LENGTH / (CONNECTOR_LUGS + 1);
                 for (let i = 1; i <= CONNECTOR_LUGS; i++) {
                     const lugX = railOffset + (lugSpacing * i);
                     connGroup.appendChild(this.createNode('circle', { 
-                        cx: lugX, cy: baseRailY + (RAIL_HEIGHT/2), r: 6, fill: '#1e1e24', stroke: '#f1c40f', 'stroke-width': 1 
+                        cx: lugX, cy: baseRailY + (RAIL_HEIGHT/2), r: 6 * (uiScale * 0.5), fill: '#1e1e24', stroke: '#f1c40f', 'stroke-width': 1 * uiScale 
                     }));
                 }
-                // Offset Dimension Indicator
-                this.svg.appendChild(this.drawDimension(0, baseRailY + dimYOffset, railOffset, `${railOffset}mm Offset`, railColor));
+                
+                // Track bounding box expansion for dynamically offset dimension lines
+                const actualYOffset = baseRailY + (dimYOffset * uiScale);
+                if (actualYOffset < this.boundingBox.minY) this.boundingBox.minY = actualYOffset - (30 * uiScale);
+                if (actualYOffset > this.boundingBox.maxY) this.boundingBox.maxY = actualYOffset + (30 * uiScale);
+
+                this.svg.appendChild(this.drawDimension(0, actualYOffset, railOffset, `${railOffset}mm Offset`, railColor, uiScale));
                 this.svg.appendChild(connGroup);
             }
         };
 
-        // Draw Pos Connector (Dim line placed 40px ABOVE rail)
-        drawConnector(posOffset, topRailY, '#e74c3c', -40);
-        // Draw Neg Connector (Dim line placed 70px BELOW rail)
-        drawConnector(negOffset, bottomRailY, '#3498db', RAIL_HEIGHT + 40);
-
+        drawConnector(posOffset, topRailY, '#e74c3c', -80);
+        drawConnector(negOffset, bottomRailY, '#3498db', RAIL_HEIGHT + 80);
 
         // --- 5. Draw Custom Standard Holes ---
         if (holes > 0 && lengthMm > 0) {
             const spacing = lengthMm / (holes + 1);
             for (let i = 1; i <= holes; i++) {
                 const holeX = spacing * i;
-                this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: topRailY + (RAIL_HEIGHT/2), r: 5, fill: '#1e1e24' }));
-                this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: bottomRailY + (RAIL_HEIGHT/2), r: 5, fill: '#1e1e24' }));
+                // Holes scaled slightly so they don't disappear on massive prints, but clamped so they don't break the rail bounds
+                const holeRadius = Math.min(10, 5 * (uiScale * 0.5)); 
+                this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: topRailY + (RAIL_HEIGHT/2), r: holeRadius, fill: '#1e1e24' }));
+                this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: bottomRailY + (RAIL_HEIGHT/2), r: holeRadius, fill: '#1e1e24' }));
             }
         }
         
-        // --- 6. Draw Total Length Dimension ---
-        this.svg.appendChild(this.drawDimension(0, bottomRailY + RAIL_HEIGHT + 90, lengthMm, `${lengthMm} mm Total Drop`, '#ff6b6b'));
+        // --- 6. Draw Total Dimension Line ---
+        const totalDimY = bottomRailY + RAIL_HEIGHT + (140 * uiScale);
+        if (totalDimY > this.boundingBox.maxY) this.boundingBox.maxY = totalDimY + (30 * uiScale);
+        this.svg.appendChild(this.drawDimension(0, totalDimY, lengthMm, `${lengthMm} mm Total Drop`, '#ff6b6b', uiScale));
     }
 
     exportPDF() {
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ orientation: 'landscape' });
+        // Strict enforcement of 11x8.5 Letter format
+        const doc = new jsPDF({ orientation: 'landscape', format: 'letter' }); 
+        
         const length = this.inputs.length.value;
         const posOffset = this.getOptionalNumeric(this.inputs.posOffset.value);
         const negOffset = this.getOptionalNumeric(this.inputs.negOffset.value);
@@ -267,17 +280,15 @@ class RailDrafterSVG {
         const postOffsetRef = this.inputs.postOffsetRef.value === 'left' ? "Left (0mm)" : "Right (Rail End)";
         const notes = this.inputs.specs.value.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+        // Document Headers
         doc.setFontSize(18);
         doc.text("Dual-Bus Power Rail - Work Order", 15, 20);
         
         doc.setFontSize(11);
         doc.text(`Target Length: ${length} mm`, 15, 30);
         doc.text(`Custom Drill Holes: ${this.inputs.holes.value * 2} (${this.inputs.holes.value} per rail)`, 15, 38);
-        
-        // Dynamic Anchor Logging
         doc.text(`Anchor Configuration: Initiated ${postOffsetVal}mm from ${postOffsetRef} Tip`, 15, 46);
 
-        // Hardware Manifest Logging
         let yPointer = 58;
         doc.setFontSize(12);
         doc.text("Hardware Manifest:", 15, yPointer);
@@ -302,9 +313,16 @@ class RailDrafterSVG {
         doc.setFontSize(10);
         doc.text(doc.splitTextToSize(notes, 250), 15, yPointer + 8);
 
-        // SVG Capture Logic
+        // --- PDF CROP & FRAME ---
         const originalViewBox = this.svg.getAttribute('viewBox');
-        this.svg.setAttribute('viewBox', `-50 -100 ${parseInt(length) + 100} ${POST_HEIGHT + 250}`);
+        
+        // Perfectly frame the expanded bounding box calculated during the dynamic text render
+        const padX = (this.boundingBox.maxX - this.boundingBox.minX) * 0.05;
+        const padY = (this.boundingBox.maxY - this.boundingBox.minY) * 0.1;
+        const pdfViewWidth = (this.boundingBox.maxX - this.boundingBox.minX) + (padX * 2);
+        const pdfViewHeight = (this.boundingBox.maxY - this.boundingBox.minY) + (padY * 2);
+        
+        this.svg.setAttribute('viewBox', `${this.boundingBox.minX - padX} ${this.boundingBox.minY - padY} ${pdfViewWidth} ${pdfViewHeight}`);
 
         const svgData = new XMLSerializer().serializeToString(this.svg);
         const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
@@ -313,15 +331,21 @@ class RailDrafterSVG {
         const img = new Image();
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
+            // High Resolution Export multiplier for crisp CAD lines
+            canvas.width = img.width * 2; 
+            canvas.height = img.height * 2;
             const ctx = canvas.getContext('2d');
+            ctx.scale(2, 2); 
             ctx.fillStyle = '#2a2a35';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, img.width, img.height);
             ctx.drawImage(img, 0, 0);
             
-            const pngData = canvas.toDataURL('image/png');
-            doc.addImage(pngData, 'PNG', 15, yPointer + 25, 250, (canvas.height * 250) / canvas.width);
+            // Letter Landscape Dimensions: 279.4 x 215.9 mm. Printable width ~249.4 (15mm margins)
+            const printableWidth = 249.4;
+            const scaledHeight = (img.height * printableWidth) / img.width;
+            
+            const pngData = canvas.toDataURL('image/png', 1.0);
+            doc.addImage(pngData, 'PNG', 15, yPointer + 25, printableWidth, scaledHeight);
             doc.save(`DualRail_WO_${length}mm_${Date.now()}.pdf`);
             
             this.svg.setAttribute('viewBox', originalViewBox);
