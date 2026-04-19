@@ -9,17 +9,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPh58iIqZxeemTGOBOsdTjHllGQ//iIqZhtIeUNiT24G4kHk5DkKaqoXy/E/1gHQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         :root {
-            --bg-color: #1e1e24;
-            --text-color: #f1f1f1;
-            --accent: #ff6b6b;
-            --rail-color: #95a5a6;
-            --panel-bg: #2a2a35;
+            --bg-color: #1e1e24; --text-color: #f1f1f1; --accent: #ff6b6b;
+            --panel-bg: #2a2a35; --pos-color: #e74c3c; --neg-color: #3498db;
+            --fr4-color: #5d6d7e; --steel-color: #bdc3c7;
         }
         body, html {
             margin: 0; padding: 0; height: 100%;
             font-family: 'Segoe UI', system-ui, sans-serif;
-            background: var(--bg-color); color: var(--text-color);
-            overflow: hidden; 
+            background: var(--bg-color); color: var(--text-color); overflow: hidden;
         }
         .workspace-container {
             display: flex; width: 100vw; height: 100vh;
@@ -44,14 +41,17 @@
             padding: 15px; width: 100%; border-radius: 4px; cursor: pointer;
             font-weight: bold; font-size: 1rem; text-transform: uppercase; margin-top: auto;
         }
-        /* Canvas Panel Specifics */
-        #canvas-panel { position: relative; } /* Required for absolute positioning of controls */
+        #canvas-panel { position: relative; }
         .canvas-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;}
-        canvas {
+        
+        /* SVG Workspace Integration */
+        svg#draftWorkspace {
             background: var(--panel-bg); border-radius: 8px; flex-grow: 1;
-            width: 100%; touch-action: none; cursor: default;
+            width: 100%; height: 100%; touch-action: none; cursor: grab;
+            display: block;
         }
-        /* Floating Camera Controls */
+        svg#draftWorkspace:active { cursor: grabbing; }
+
         .camera-controls {
             position: absolute; bottom: 40px; right: 40px;
             display: flex; gap: 10px; background: rgba(30, 30, 36, 0.85);
@@ -64,7 +64,6 @@
             display: flex; align-items: center; justify-content: center;
         }
         .cam-btn:hover { background: var(--accent); }
-        .cam-btn:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
@@ -77,22 +76,23 @@
             <input type="number" id="railLength" max="9998" min="0" value="9998" inputmode="numeric">
         </div>
         <div class="input-group">
-            <label for="holeCount">Required Drill Holes</label>
-            <input type="number" id="holeCount" max="20" min="0" value="0" inputmode="numeric">
+            <label for="holeCount">Required Drill Holes (Per Rail)</label>
+            <input type="number" id="holeCount" max="40" min="0" value="0" inputmode="numeric">
         </div>
         <div class="input-group">
             <label for="specs">Engineering Notes & Specs</label>
-            <textarea id="specs" rows="6" placeholder="Enter environmental conditions, specific part numbers..."></textarea>
+            <textarea id="specs" rows="6" placeholder="Enter FR4 specs, environmental tolerances..."></textarea>
         </div>
         <button id="exportPdfBtn" class="primary-btn">Export Work Order (PDF)</button>
     </div>
 
     <div class="panel" id="canvas-panel">
         <div class="canvas-header">
-            <h2>2D Live Draft</h2>
+            <h2>Dual-Bus Draft</h2>
             <span id="live-distance" style="color: var(--accent); font-family: monospace;">9998 mm</span>
         </div>
-        <canvas id="draftCanvas"></canvas>
+        
+        <svg id="draftWorkspace" xmlns="http://www.w3.org/2000/svg"></svg>
         
         <div class="camera-controls">
             <button class="cam-btn" id="btn-zoom-out" title="Zoom Out">−</button>
@@ -103,12 +103,5 @@
 </div>
 
 <script src="app.js"></script>
-<script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').catch(err => console.error('SW Error:', err));
-        });
-    }
-</script>
 </body>
 </html>
