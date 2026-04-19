@@ -2,7 +2,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_LENGTH_MM = 9998;
 const VISUAL_POST_INTERVAL_MM = 2000; 
 
-// Architectural Geometry Constants (These represent TRUE 1:1 Physical Math)
+// Architectural Geometry Constants
 const RAIL_HEIGHT = 30;
 const RAIL_GAP = 90; 
 const POST_WIDTH = 60;
@@ -14,6 +14,15 @@ class RailDrafterSVG {
     constructor() {
         this.svg = document.getElementById('draftWorkspace');
         
+        // Drawer UI Nodes
+        this.ui = {
+            drawer: document.getElementById('configDrawer'),
+            overlay: document.getElementById('drawerOverlay'),
+            openBtn: document.getElementById('openMenuBtn'),
+            closeBtn: document.getElementById('closeMenuBtn')
+        };
+
+        // Data Inputs
         this.inputs = {
             length: document.getElementById('railLength'),
             holes: document.getElementById('holeCount'),
@@ -27,8 +36,6 @@ class RailDrafterSVG {
         
         this.camera = { x: 0, y: 0, width: 1000, height: 1000 };
         this.drag = { active: false, startX: 0, startY: 0, startCamX: 0, startCamY: 0 };
-        
-        // Expose bounds for PDF capture framing
         this.boundingBox = { minX: 0, maxX: 1000, minY: 0, maxY: 1000 };
 
         this.init();
@@ -37,20 +44,41 @@ class RailDrafterSVG {
     init() {
         window.addEventListener('resize', () => this.resizeWorkspace());
         
+        // Drawer State Binding
+        this.ui.openBtn.addEventListener('click', () => this.toggleDrawer(true));
+        this.ui.closeBtn.addEventListener('click', () => this.toggleDrawer(false));
+        this.ui.overlay.addEventListener('click', () => this.toggleDrawer(false)); // Close on outside click
+
+        // Input Binding
         Object.values(this.inputs).forEach(input => {
             if(input.tagName === 'INPUT' || input.tagName === 'SELECT') {
                 input.addEventListener('input', () => this.renderAndRecenter());
             }
         });
         
-        document.getElementById('exportPdfBtn').addEventListener('click', () => this.exportPDF());
+        document.getElementById('exportPdfBtn').addEventListener('click', () => {
+            this.exportPDF();
+            this.toggleDrawer(false); // Auto-close drawer on export
+        });
         
+        // Camera Binding
         document.getElementById('btn-zoom-in').addEventListener('click', () => this.adjustZoom(0.8));
         document.getElementById('btn-zoom-out').addEventListener('click', () => this.adjustZoom(1.2));
         document.getElementById('btn-recenter').addEventListener('click', () => this.recenterCamera());
 
         this.bindCameraEvents();
         this.renderAndRecenter();
+        this.toggleDrawer(true); // Open drawer on load so user knows where inputs are
+    }
+
+    toggleDrawer(isOpen) {
+        if (isOpen) {
+            this.ui.drawer.classList.add('open');
+            this.ui.overlay.classList.add('active');
+        } else {
+            this.ui.drawer.classList.remove('open');
+            this.ui.overlay.classList.remove('active');
+        }
     }
 
     createNode(tag, attributes) {
@@ -112,19 +140,13 @@ class RailDrafterSVG {
     }
 
     recenterCamera() {
-        // Automatically frame the camera to fit the bounding box (which includes our dynamic text)
         const padX = (this.boundingBox.maxX - this.boundingBox.minX) * 0.1;
-        const padY = (this.boundingBox.maxY - this.boundingBox.minY) * 0.1;
-        
         this.camera.width = (this.boundingBox.maxX - this.boundingBox.minX) + (padX * 2);
-        
         const aspect = this.svg.clientHeight / this.svg.clientWidth;
         this.camera.height = this.camera.width * aspect;
         
-        // Center the camera over the bounding box
         this.camera.x = this.boundingBox.minX - padX;
         this.camera.y = this.boundingBox.minY - ((this.camera.height - (this.boundingBox.maxY - this.boundingBox.minY)) / 2);
-        
         this.applyCamera();
     }
 
@@ -167,20 +189,14 @@ class RailDrafterSVG {
         const postOffsetRef = this.inputs.postOffsetRef.value;
 
         this.labels.distance.textContent = `${lengthMm} mm`;
-
         while (this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
 
-        // --- DYNAMIC SCALING ALGORITHM ---
-        // As the rail gets longer, text and offsets must scale up to remain legible when exported to 11x8.5 paper
         const uiScale = Math.max(1, lengthMm / 1000); 
-
         const topRailY = 0;
         const bottomRailY = topRailY + RAIL_HEIGHT + RAIL_GAP;
 
-        // Reset Bounding Box Tracking for the Camera
         this.boundingBox = { minX: 0, maxX: lengthMm, minY: topRailY - (80 * uiScale), maxY: bottomRailY + (120 * uiScale) };
 
-        // --- 1. Bidirectional Post Propagation ---
         let postPositions = [];
         if (lengthMm >= 0) {
             let clampedOffset = Math.min(postOffsetVal, lengthMm);
@@ -191,7 +207,6 @@ class RailDrafterSVG {
             }
         }
 
-        // --- 2. Draw FR4 Posts ---
         postPositions.forEach((pos, index) => {
             const isStructural = (index === 0 || index === postPositions.length - 1);
             const postGroup = this.createNode('g', {});
@@ -201,7 +216,6 @@ class RailDrafterSVG {
                 fill: '#5d6d7e', rx: 5, opacity: isStructural ? "1.0" : "0.3" 
             }));
             
-            // Scaled Text for Posts
             if (isStructural) {
                 const text = this.createNode('text', {
                     x: pos, y: topRailY - (40 * uiScale), fill: '#fff', 
@@ -213,7 +227,6 @@ class RailDrafterSVG {
             this.svg.appendChild(postGroup);
         });
 
-        // --- 3. Draw Main Power Rails ---
         this.svg.appendChild(this.createNode('rect', {
             x: 0, y: topRailY, width: lengthMm, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#e74c3c', 'stroke-width': 2 * uiScale 
         }));
@@ -221,7 +234,6 @@ class RailDrafterSVG {
             x: 0, y: bottomRailY, width: lengthMm, height: RAIL_HEIGHT, fill: '#bdc3c7', stroke: '#3498db', 'stroke-width': 2 * uiScale 
         }));
 
-        // --- 4. Draw 5-Lug Connectors ---
         const drawConnector = (railOffset, baseRailY, railColor, dimYOffset) => {
             if (railOffset !== null && railOffset >= 0) {
                 const connGroup = this.createNode('g', {});
@@ -237,7 +249,6 @@ class RailDrafterSVG {
                     }));
                 }
                 
-                // Track bounding box expansion for dynamically offset dimension lines
                 const actualYOffset = baseRailY + (dimYOffset * uiScale);
                 if (actualYOffset < this.boundingBox.minY) this.boundingBox.minY = actualYOffset - (30 * uiScale);
                 if (actualYOffset > this.boundingBox.maxY) this.boundingBox.maxY = actualYOffset + (30 * uiScale);
@@ -250,19 +261,16 @@ class RailDrafterSVG {
         drawConnector(posOffset, topRailY, '#e74c3c', -80);
         drawConnector(negOffset, bottomRailY, '#3498db', RAIL_HEIGHT + 80);
 
-        // --- 5. Draw Custom Standard Holes ---
         if (holes > 0 && lengthMm > 0) {
             const spacing = lengthMm / (holes + 1);
             for (let i = 1; i <= holes; i++) {
                 const holeX = spacing * i;
-                // Holes scaled slightly so they don't disappear on massive prints, but clamped so they don't break the rail bounds
                 const holeRadius = Math.min(10, 5 * (uiScale * 0.5)); 
                 this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: topRailY + (RAIL_HEIGHT/2), r: holeRadius, fill: '#1e1e24' }));
                 this.svg.appendChild(this.createNode('circle', { cx: holeX, cy: bottomRailY + (RAIL_HEIGHT/2), r: holeRadius, fill: '#1e1e24' }));
             }
         }
         
-        // --- 6. Draw Total Dimension Line ---
         const totalDimY = bottomRailY + RAIL_HEIGHT + (140 * uiScale);
         if (totalDimY > this.boundingBox.maxY) this.boundingBox.maxY = totalDimY + (30 * uiScale);
         this.svg.appendChild(this.drawDimension(0, totalDimY, lengthMm, `${lengthMm} mm Total Drop`, '#ff6b6b', uiScale));
@@ -270,7 +278,6 @@ class RailDrafterSVG {
 
     exportPDF() {
         const { jsPDF } = window.jspdf;
-        // Strict enforcement of 11x8.5 Letter format
         const doc = new jsPDF({ orientation: 'landscape', format: 'letter' }); 
         
         const length = this.inputs.length.value;
@@ -280,7 +287,6 @@ class RailDrafterSVG {
         const postOffsetRef = this.inputs.postOffsetRef.value === 'left' ? "Left (0mm)" : "Right (Rail End)";
         const notes = this.inputs.specs.value.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-        // Document Headers
         doc.setFontSize(18);
         doc.text("Dual-Bus Power Rail - Work Order", 15, 20);
         
@@ -313,10 +319,8 @@ class RailDrafterSVG {
         doc.setFontSize(10);
         doc.text(doc.splitTextToSize(notes, 250), 15, yPointer + 8);
 
-        // --- PDF CROP & FRAME ---
         const originalViewBox = this.svg.getAttribute('viewBox');
         
-        // Perfectly frame the expanded bounding box calculated during the dynamic text render
         const padX = (this.boundingBox.maxX - this.boundingBox.minX) * 0.05;
         const padY = (this.boundingBox.maxY - this.boundingBox.minY) * 0.1;
         const pdfViewWidth = (this.boundingBox.maxX - this.boundingBox.minX) + (padX * 2);
@@ -331,7 +335,6 @@ class RailDrafterSVG {
         const img = new Image();
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            // High Resolution Export multiplier for crisp CAD lines
             canvas.width = img.width * 2; 
             canvas.height = img.height * 2;
             const ctx = canvas.getContext('2d');
@@ -340,7 +343,6 @@ class RailDrafterSVG {
             ctx.fillRect(0, 0, img.width, img.height);
             ctx.drawImage(img, 0, 0);
             
-            // Letter Landscape Dimensions: 279.4 x 215.9 mm. Printable width ~249.4 (15mm margins)
             const printableWidth = 249.4;
             const scaledHeight = (img.height * printableWidth) / img.width;
             
