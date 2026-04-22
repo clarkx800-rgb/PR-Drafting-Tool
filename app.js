@@ -18,7 +18,11 @@ class RailDrafterSVG {
             overlay: document.getElementById('drawerOverlay'),
             openBtn: document.getElementById('openMenuBtn'),
             closeBtn: document.getElementById('closeMenuBtn'),
-            pullTab: document.getElementById('pullTab')
+            pullTab: document.getElementById('pullTab'),
+            dateHeader: document.getElementById('tb-date'),
+            posHeader: document.getElementById('tb-pos'),
+            negHeader: document.getElementById('tb-neg'),
+            commentBox: document.getElementById('stationaryComment')
         };
         this.inputs = {
             posLength: document.getElementById('posLength'),
@@ -26,8 +30,7 @@ class RailDrafterSVG {
             posOffset: document.getElementById('posOffset'),
             negOffset: document.getElementById('negOffset'),
             postOffsetVal: document.getElementById('postOffsetVal'),
-            postOffsetRef: document.getElementById('postOffsetRef'),
-            specs: document.getElementById('specs')
+            postOffsetRef: document.getElementById('postOffsetRef')
         };
         
         this.camera = { x: 0, y: 0, width: 2000, height: 1000 };
@@ -39,13 +42,15 @@ class RailDrafterSVG {
     }
 
     init() {
+        // Set dynamic date in header
+        this.ui.dateHeader.textContent = `DATE: ${new Date().toLocaleDateString()}`;
+
         requestAnimationFrame(() => {
             this.resizeWorkspace();
             this.renderAndRecenter();
         });
 
         window.addEventListener('resize', () => this.resizeWorkspace());
-        
         this.ui.openBtn.addEventListener('click', () => this.toggleDrawer(true));
         this.ui.closeBtn.addEventListener('click', () => this.toggleDrawer(false));
         this.ui.overlay.addEventListener('click', () => this.toggleDrawer(false));
@@ -93,6 +98,7 @@ class RailDrafterSVG {
 
     bindCameraEvents() {
         this.svg.addEventListener('pointerdown', e => {
+            if (e.target.tagName !== 'svg' && e.target.tagName !== 'rect') return; // Don't drag if interacting with floating buttons
             this.drag.active = true;
             this.drag.startX = e.clientX; this.drag.startY = e.clientY;
             this.drag.startCamX = this.camera.x; this.drag.startCamY = this.camera.y;
@@ -126,7 +132,7 @@ class RailDrafterSVG {
         const h = this.svg.clientHeight || 500;
         const w = this.svg.clientWidth || 1000;
         
-        // Pad the camera slightly OUTSIDE the white paper so the user can see the shadow and edges
+        // Pad the camera closely around the narrowed paper
         const pad = (this.boundingBox.maxX - this.boundingBox.minX) * 0.05; 
         
         this.camera.width = Math.max(100, (this.boundingBox.maxX - this.boundingBox.minX) + (pad * 2));
@@ -162,75 +168,45 @@ class RailDrafterSVG {
         const maxLen = Math.max(pLen, nLen);
         const uiScale = Math.max(1.5, maxLen / 1200);
 
+        // Update Stationary HTML Headers
+        this.ui.posHeader.textContent = `POS: ${pLen}mm`;
+        this.ui.negHeader.textContent = `NEG: ${nLen}mm`;
+
         while(this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
 
-        // --- 1. Paper Drop Shadow Filter ---
+        // Filter for Drop Shadow
         const defs = this.createNode('defs', {});
         const filter = this.createNode('filter', { id: 'paper-shadow', x: '-5%', y: '-5%', width: '120%', height: '120%' });
-        filter.appendChild(this.createNode('feDropShadow', { dx: 15*uiScale, dy: 25*uiScale, stdDeviation: 20*uiScale, 'flood-opacity': 0.6, 'flood-color': '#000' }));
+        filter.appendChild(this.createNode('feDropShadow', { dx: 10*uiScale, dy: 15*uiScale, stdDeviation: 10*uiScale, 'flood-opacity': 0.6, 'flood-color': '#000' }));
         defs.appendChild(filter);
         this.svg.appendChild(defs);
 
         const topY = 0; 
         const botY = topY + RAIL_HEIGHT + RAIL_GAP;
         
-        // --- 2. Calculate Content Bounds & Apply 11x8.5 Letter Ratio ---
+        // NARROW CANVAS CALCULATION: Wrap tightly around the CAD elements
         const contentMinX = 0;
         const contentMaxX = maxLen;
-        const contentMinY = topY - 300 * uiScale; 
-        const contentMaxY = botY + RAIL_HEIGHT + 300 * uiScale; 
+        const contentMinY = topY - 300 * uiScale; // Room for top dimension
+        const contentMaxY = botY + RAIL_HEIGHT + 300 * uiScale; // Room for bottom dimension
 
-        // Internal margins on the white paper
-        const padX = Math.max(600 * uiScale, maxLen * 0.1);
-        const padY = 600 * uiScale;
+        const padX = Math.max(400 * uiScale, maxLen * 0.05);
+        const padY = 250 * uiScale; // Tight vertical padding
         
-        const targetW = (contentMaxX - contentMinX) + padX * 2;
-        const targetH = (contentMaxY - contentMinY) + padY * 2;
-        const letterRatio = 11 / 8.5; // True 11x8.5 landscape ratio
-        
-        let paperW, paperH;
-        if (targetW / targetH > letterRatio) {
-            paperW = targetW; paperH = targetW / letterRatio;
-        } else {
-            paperH = targetH; paperW = targetH * letterRatio;
-        }
+        const paperW = (contentMaxX - contentMinX) + padX * 2;
+        const paperH = (contentMaxY - contentMinY) + padY * 2;
+        const paperX = contentMinX - padX;
+        const paperY = contentMinY - padY;
 
-        const paperX = contentMinX - padX - (paperW - targetW)/2;
-        const paperY = contentMinY - padY - (paperH - targetH)/2;
-
-        // The camera bounds are strictly tied to the Paper
         this.boundingBox = { minX: paperX, maxX: paperX + paperW, minY: paperY, maxY: paperY + paperH };
 
-        // --- 3. Draw White Letter Canvas ---
+        // Draw Snug White Canvas
         this.svg.appendChild(this.createNode('rect', {
             x: paperX, y: paperY, width: paperW, height: paperH,
             fill: '#ffffff', filter: 'url(#paper-shadow)'
         }));
 
-        // --- 4. Draw Native SVG Title Block ---
-        const titleGroup = this.createNode('g', {});
-        const titleX = paperX + 120 * uiScale;
-        const titleY = paperY + 160 * uiScale;
-        
-        const titleText = this.createNode('text', { x: titleX, y: titleY, fill: '#1e293b', 'font-size': `${60*uiScale}px`, 'font-family': 'sans-serif', 'font-weight': 'bold' });
-        titleText.textContent = "DUAL-BUS POWER RAIL WORK ORDER";
-        
-        const subText = this.createNode('text', { x: titleX, y: titleY + 70*uiScale, fill: '#475569', 'font-size': `${35*uiScale}px`, 'font-family': 'monospace' });
-        subText.textContent = `DATE: ${new Date().toLocaleDateString()} | POS: ${pLen}mm | NEG: ${nLen}mm`;
-
-        const notesText = this.inputs.specs.value;
-        if (notesText) {
-            const specNode = this.createNode('text', { x: titleX, y: titleY + 130*uiScale, fill: '#64748b', 'font-size': `${28*uiScale}px`, 'font-family': 'sans-serif', 'font-style': 'italic' });
-            specNode.textContent = `Notes: ${notesText}`;
-            titleGroup.appendChild(specNode);
-        }
-
-        titleGroup.appendChild(titleText);
-        titleGroup.appendChild(subText);
-        this.svg.appendChild(titleGroup);
-
-
-        // --- 5. Draw Posts (Light CAD colors for white paper) ---
+        // Draw Posts
         const postOff = parseInt(this.inputs.postOffsetVal.value) || 0;
         let posts = [];
         if (this.inputs.postOffsetRef.value === 'right') {
@@ -253,11 +229,11 @@ class RailDrafterSVG {
             this.svg.appendChild(g);
         });
 
-        // --- 6. Draw Rails (Inverted to look good on white) ---
+        // Draw Rails
         this.svg.appendChild(this.createNode('rect', { x: 0, y: topY, width: pLen, height: RAIL_HEIGHT, fill: '#f8fafc', stroke: '#e74c3c', 'stroke-width': 4 * uiScale }));
         this.svg.appendChild(this.createNode('rect', { x: 0, y: botY, width: nLen, height: RAIL_HEIGHT, fill: '#f8fafc', stroke: '#3498db', 'stroke-width': 4 * uiScale }));
 
-        // --- 7. Draw Connectors & Staggered Offsets ---
+        // Draw Connectors
         const drawConn = (off, y, color, side) => {
             if (isNaN(off) || off < 0) return;
             const g = this.createNode('g', { opacity: 1 });
@@ -276,7 +252,7 @@ class RailDrafterSVG {
         drawConn(parseInt(this.inputs.posOffset.value), topY, '#e74c3c', 'top');
         drawConn(parseInt(this.inputs.negOffset.value), botY, '#3498db', 'bot');
 
-        // --- 8. Absolute Rail Dimensions ---
+        // Draw Main Dimensions
         const pDimY = topY - 80 * uiScale;
         const nDimY = botY + RAIL_HEIGHT + 80 * uiScale;
         this.svg.appendChild(this.drawDim(0, pDimY, pLen, `POS: ${pLen}mm`, '#e74c3c', uiScale));
@@ -285,10 +261,36 @@ class RailDrafterSVG {
 
     exportPDF() {
         const { jsPDF } = window.jspdf;
-        // Strict 11x8.5 format declaration
         const doc = new jsPDF({ orientation: 'l', format: 'letter', unit: 'mm' });
         
-        // Target specifically the white paper bounds
+        const pLen = this.inputs.posLength.value;
+        const nLen = this.inputs.negLength.value;
+        const comments = this.ui.commentBox.value;
+
+        // 1. Write the decoupled HTML details onto the PDF directly
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        doc.text("DUAL-BUS POWER RAIL WORK ORDER", 15, 15);
+        
+        doc.setFont("courier", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`DATE: ${new Date().toLocaleDateString()}`, 15, 22);
+        
+        doc.setTextColor(231, 76, 60); // Red
+        doc.text(`POS: ${pLen}mm`, 60, 22);
+        
+        doc.setTextColor(52, 152, 219); // Blue
+        doc.text(`NEG: ${nLen}mm`, 95, 22);
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(10);
+        if(comments.trim() !== '') {
+            doc.text(`Comments: ${comments}`, 15, 28);
+        }
+
+        // 2. Snapshot the SVG Canvas
         const originalViewBox = this.svg.getAttribute('viewBox');
         this.svg.setAttribute('viewBox', `${this.boundingBox.minX} ${this.boundingBox.minY} ${this.boundingBox.maxX - this.boundingBox.minX} ${this.boundingBox.maxY - this.boundingBox.minY}`);
 
@@ -297,18 +299,19 @@ class RailDrafterSVG {
         
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            // High Resolution Print (300 DPI Letter)
             canvas.width = 3300; 
-            canvas.height = 2550; 
+            canvas.height = canvas.width * ((this.boundingBox.maxY - this.boundingBox.minY) / (this.boundingBox.maxX - this.boundingBox.minX)); 
             const ctx = canvas.getContext('2d');
             
             ctx.fillStyle = '#ffffff'; 
             ctx.fillRect(0,0,canvas.width,canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             
-            // Blast the image directly onto the exact bounds of the PDF sheet
-            // 279.4 x 215.9 mm = 11 x 8.5 inches
-            doc.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', 0, 0, 279.4, 215.9);
+            const printableWidth = 249.4; // 11 inches minus margins
+            const scaledHeight = (canvas.height * printableWidth) / canvas.width;
+            
+            // Draw image below the text headers (Y = 35)
+            doc.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', 15, 35, printableWidth, scaledHeight);
             doc.save(`Rail_CAD_WO_${Date.now()}.pdf`);
             
             this.svg.setAttribute('viewBox', originalViewBox);

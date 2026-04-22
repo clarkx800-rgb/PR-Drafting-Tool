@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline';">
-    <title>Power Rail Drafter - WYSIWYG CAD</title>
+    <title>Power Rail Drafter - CAD Logic</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPh58iIqZxeemTGOBOsdTjHllGQ//iIqZhtIeUNiT24G4kHk5DkKaqoXy/E/1gHQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
@@ -19,26 +19,49 @@
         }
         .app-layout { display: flex; flex-direction: column; height: 100vh; width: 100vw; position: relative; }
         
+        /* App Header */
         .header {
-            padding: 15px 20px; background: var(--panel-bg);
+            padding: 10px 20px; background: var(--panel-bg);
             border-bottom: 1px solid var(--border-color);
             display: flex; justify-content: space-between; align-items: center; z-index: 10;
         }
-        .header h1 { margin: 0; font-size: 1.1rem; }
+        .header h1 { margin: 0; font-size: 1rem; color: #aaa; }
         
+        /* Stationary Title Block */
+        .stationary-title-block {
+            background: #23232b; padding: 15px 20px; border-bottom: 2px solid var(--border-color);
+            display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; z-index: 5;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .stationary-title-block h2 { margin: 0; font-size: 1.2rem; color: #fff; letter-spacing: 1px; }
+        .meta-data { font-family: monospace; font-size: 0.95rem; color: var(--accent); font-weight: bold; }
+        
+        /* Workspace */
         .workspace-area { 
             flex-grow: 1; position: relative; background: var(--workspace-bg); 
             overflow: hidden; min-height: 200px;
         }
         svg#draftWorkspace { width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
-        
+        svg#draftWorkspace:active { cursor: grabbing; }
+
+        /* Stationary Comment Box */
+        .stationary-comment-block {
+            background: var(--panel-bg); padding: 15px 20px; border-top: 1px solid var(--border-color);
+            flex-shrink: 0; z-index: 5; display: flex; gap: 15px; align-items: center;
+        }
+        .stationary-comment-block input {
+            flex-grow: 1; padding: 12px; background: #121212; border: 1px solid #444; 
+            color: white; border-radius: 4px; font-family: sans-serif; font-size: 1rem;
+        }
+        .stationary-comment-block input:focus { outline: 1px solid var(--accent); }
+
+        /* Floating Controls */
         .fab-config {
             position: absolute; bottom: 20px; right: 20px;
             background: var(--accent); color: white; border: none; border-radius: 50%;
             width: 56px; height: 56px; font-size: 1.5rem; cursor: pointer; z-index: 10;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
-
         .camera-controls {
             position: absolute; bottom: 28px; right: 90px;
             display: flex; gap: 8px; background: rgba(30, 30, 36, 0.85);
@@ -46,15 +69,15 @@
         }
         .cam-btn { background: #444; color: white; border: none; width: 36px; height: 36px; cursor: pointer; border-radius: 4px; }
 
+        /* Drawer CSS */
         .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); opacity: 0; pointer-events: none; transition: 0.3s; z-index: 99; }
         .drawer-overlay.active { opacity: 1; pointer-events: auto; }
 
         .config-drawer {
             position: fixed; background: var(--panel-bg); z-index: 100; display: flex; flex-direction: column; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        
         @media (orientation: portrait) {
-            .config-drawer { bottom: 0; left: 0; width: 100vw; height: 75vh; transform: translateY(100%); border-radius: 16px 16px 0 0; }
+            .config-drawer { bottom: 0; left: 0; width: 100vw; height: 70vh; transform: translateY(100%); border-radius: 16px 16px 0 0; }
             .config-drawer.open { transform: translateY(0); }
             .drawer-pull-tab { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); width: 50px; height: 20px; background: var(--panel-bg); border-radius: 8px 8px 0 0; border: 1px solid var(--border-color); border-bottom: none; }
         }
@@ -65,12 +88,13 @@
         }
 
         .drawer-header { padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .drawer-header h2 { margin: 0; font-size: 1.2rem; }
         .drawer-body { padding: 20px; overflow-y: auto; flex-grow: 1; }
         .config-section { border-left: 3px solid #555; padding-left: 12px; margin-bottom: 20px; }
         .config-section h3 { font-size: 0.75rem; color: #888; text-transform: uppercase; margin: 0 0 10px 0; }
         .input-group { margin-bottom: 15px; }
         label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 5px; }
-        input, select, textarea { width: 100%; padding: 10px; background: #121212; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; }
+        input[type="number"], select { width: 100%; padding: 10px; background: #121212; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; }
         .primary-btn { background: var(--accent); color: white; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; border-radius: 4px; letter-spacing: 1px;}
     </style>
 </head>
@@ -78,9 +102,18 @@
 
 <div class="app-layout">
     <header class="header">
-        <h1>Letter Canvas Drafter</h1>
-        <div id="status" style="font-size: 0.8rem; color: #aaa;">Status: Live WYSIWYG</div>
+        <h1>Rail Drafter Engine</h1>
+        <div id="status" style="font-size: 0.8rem; color: #aaa;">CAD Viewer Active</div>
     </header>
+
+    <div class="stationary-title-block">
+        <h2>DUAL-BUS POWER RAIL WORK ORDER</h2>
+        <div class="meta-data">
+            <span id="tb-date">DATE: --/--/----</span> | 
+            <span id="tb-pos" style="color: #e74c3c;">POS: 9998mm</span> | 
+            <span id="tb-neg" style="color: #3498db;">NEG: 9000mm</span>
+        </div>
+    </div>
 
     <div class="workspace-area">
         <svg id="draftWorkspace" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -90,6 +123,10 @@
             <button class="cam-btn" id="btn-zoom-in">+</button>
         </div>
         <button class="fab-config" id="openMenuBtn">⚙️</button>
+    </div>
+
+    <div class="stationary-comment-block">
+        <input type="text" id="stationaryComment" placeholder="Enter Work Order comments, revisions, or specs here...">
     </div>
 </div>
 
@@ -113,9 +150,8 @@
             <div class="input-group"><label>Anchor Offset (mm)</label><input type="number" id="postOffsetVal" value="0"></div>
             <div class="input-group"><label>Reference</label><select id="postOffsetRef"><option value="left">Left Tip</option><option value="right">Right Tip</option></select></div>
         </div>
-        <textarea id="specs" rows="3" placeholder="Notes..."></textarea>
     </div>
-    <div class="drawer-footer" style="padding:20px;"><button id="exportPdfBtn" class="primary-btn">EXPORT SHEET TO PDF</button></div>
+    <div class="drawer-footer" style="padding:20px; border-top: 1px solid var(--border-color);"><button id="exportPdfBtn" class="primary-btn">EXPORT TO PDF</button></div>
 </div>
 
 <script src="app.js"></script>
