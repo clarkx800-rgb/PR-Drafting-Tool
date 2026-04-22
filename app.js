@@ -39,7 +39,6 @@ class RailDrafterSVG {
     }
 
     init() {
-        // Handle race conditions with requestAnimationFrame
         requestAnimationFrame(() => {
             this.resizeWorkspace();
             this.renderAndRecenter();
@@ -126,7 +125,10 @@ class RailDrafterSVG {
     recenterCamera() {
         const h = this.svg.clientHeight || 500;
         const w = this.svg.clientWidth || 1000;
-        const pad = (this.boundingBox.maxX - this.boundingBox.minX) * 0.2;
+        
+        // Pad the camera slightly OUTSIDE the white paper so the user can see the shadow and edges
+        const pad = (this.boundingBox.maxX - this.boundingBox.minX) * 0.05; 
+        
         this.camera.width = Math.max(100, (this.boundingBox.maxX - this.boundingBox.minX) + (pad * 2));
         this.camera.height = this.camera.width * (h / w);
         this.camera.x = this.boundingBox.minX - pad;
@@ -136,30 +138,18 @@ class RailDrafterSVG {
 
     resizeWorkspace() { this.recenterCamera(); }
 
-    /**
-     * CAD-Style Dimension Drawing
-     * Places text centered above the dimension line.
-     */
-    drawDim(x1, y, x2, txt, color, uiScale, isOffset = false) {
-        const g = this.createNode('g', { stroke: color, 'stroke-width': 3 * uiScale });
-        const tickSize = 25 * uiScale;
+    drawDim(x1, y, x2, txt, color, uiScale) {
+        const g = this.createNode('g', { stroke: color, 'stroke-width': 4 * uiScale });
+        const tickSize = 30 * uiScale;
         
-        // Horizontal Line
         g.appendChild(this.createNode('line', { x1, y1: y, x2, y2: y }));
-        // Vertical End Ticks
         g.appendChild(this.createNode('line', { x1, y1: y - tickSize/2, x2: x1, y2: y + tickSize/2 }));
         g.appendChild(this.createNode('line', { x1: x2, y1: y - tickSize/2, x2: x2, y2: y + tickSize/2 }));
         
-        // Text Label
         const t = this.createNode('text', { 
-            x: x1 + (x2 - x1) / 2, 
-            y: y - 10 * uiScale, 
-            fill: color, 
-            'text-anchor': 'middle', 
-            'font-size': `${26 * uiScale}px`, 
-            'font-family': 'monospace', 
-            stroke: 'none',
-            'font-weight': 'bold'
+            x: x1 + (x2 - x1) / 2, y: y - 15 * uiScale, 
+            fill: color, 'text-anchor': 'middle', 'font-size': `${32 * uiScale}px`, 
+            'font-family': 'monospace', stroke: 'none', 'font-weight': 'bold'
         });
         t.textContent = txt;
         g.appendChild(t);
@@ -174,18 +164,73 @@ class RailDrafterSVG {
 
         while(this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
 
+        // --- 1. Paper Drop Shadow Filter ---
+        const defs = this.createNode('defs', {});
+        const filter = this.createNode('filter', { id: 'paper-shadow', x: '-5%', y: '-5%', width: '120%', height: '120%' });
+        filter.appendChild(this.createNode('feDropShadow', { dx: 15*uiScale, dy: 25*uiScale, stdDeviation: 20*uiScale, 'flood-opacity': 0.6, 'flood-color': '#000' }));
+        defs.appendChild(filter);
+        this.svg.appendChild(defs);
+
         const topY = 0; 
         const botY = topY + RAIL_HEIGHT + RAIL_GAP;
         
-        // Establish expanded bounding box to accommodate external dimension lines
-        this.boundingBox = { 
-            minX: 0, 
-            maxX: maxLen, 
-            minY: topY - 300 * uiScale, 
-            maxY: botY + RAIL_HEIGHT + 300 * uiScale 
-        };
+        // --- 2. Calculate Content Bounds & Apply 11x8.5 Letter Ratio ---
+        const contentMinX = 0;
+        const contentMaxX = maxLen;
+        const contentMinY = topY - 300 * uiScale; 
+        const contentMaxY = botY + RAIL_HEIGHT + 300 * uiScale; 
 
-        // 1. Posts
+        // Internal margins on the white paper
+        const padX = Math.max(600 * uiScale, maxLen * 0.1);
+        const padY = 600 * uiScale;
+        
+        const targetW = (contentMaxX - contentMinX) + padX * 2;
+        const targetH = (contentMaxY - contentMinY) + padY * 2;
+        const letterRatio = 11 / 8.5; // True 11x8.5 landscape ratio
+        
+        let paperW, paperH;
+        if (targetW / targetH > letterRatio) {
+            paperW = targetW; paperH = targetW / letterRatio;
+        } else {
+            paperH = targetH; paperW = targetH * letterRatio;
+        }
+
+        const paperX = contentMinX - padX - (paperW - targetW)/2;
+        const paperY = contentMinY - padY - (paperH - targetH)/2;
+
+        // The camera bounds are strictly tied to the Paper
+        this.boundingBox = { minX: paperX, maxX: paperX + paperW, minY: paperY, maxY: paperY + paperH };
+
+        // --- 3. Draw White Letter Canvas ---
+        this.svg.appendChild(this.createNode('rect', {
+            x: paperX, y: paperY, width: paperW, height: paperH,
+            fill: '#ffffff', filter: 'url(#paper-shadow)'
+        }));
+
+        // --- 4. Draw Native SVG Title Block ---
+        const titleGroup = this.createNode('g', {});
+        const titleX = paperX + 120 * uiScale;
+        const titleY = paperY + 160 * uiScale;
+        
+        const titleText = this.createNode('text', { x: titleX, y: titleY, fill: '#1e293b', 'font-size': `${60*uiScale}px`, 'font-family': 'sans-serif', 'font-weight': 'bold' });
+        titleText.textContent = "DUAL-BUS POWER RAIL WORK ORDER";
+        
+        const subText = this.createNode('text', { x: titleX, y: titleY + 70*uiScale, fill: '#475569', 'font-size': `${35*uiScale}px`, 'font-family': 'monospace' });
+        subText.textContent = `DATE: ${new Date().toLocaleDateString()} | POS: ${pLen}mm | NEG: ${nLen}mm`;
+
+        const notesText = this.inputs.specs.value;
+        if (notesText) {
+            const specNode = this.createNode('text', { x: titleX, y: titleY + 130*uiScale, fill: '#64748b', 'font-size': `${28*uiScale}px`, 'font-family': 'sans-serif', 'font-style': 'italic' });
+            specNode.textContent = `Notes: ${notesText}`;
+            titleGroup.appendChild(specNode);
+        }
+
+        titleGroup.appendChild(titleText);
+        titleGroup.appendChild(subText);
+        this.svg.appendChild(titleGroup);
+
+
+        // --- 5. Draw Posts (Light CAD colors for white paper) ---
         const postOff = parseInt(this.inputs.postOffsetVal.value) || 0;
         let posts = [];
         if (this.inputs.postOffsetRef.value === 'right') {
@@ -196,39 +241,42 @@ class RailDrafterSVG {
 
         posts.forEach((p, i) => {
             const isStruc = (i === 0 || i === posts.length - 1);
-            const g = this.createNode('g', { opacity: isStruc ? 1 : 0.2 });
-            g.appendChild(this.createNode('rect', { x: p-30, y: topY-40, width: 60, height: POST_HEIGHT, fill: '#555', rx: 5 }));
+            const g = this.createNode('g', { opacity: isStruc ? 1 : 0.4 });
+            g.appendChild(this.createNode('rect', { 
+                x: p-30, y: topY-40, width: 60, height: POST_HEIGHT, 
+                fill: '#e2e8f0', stroke: '#94a3b8', 'stroke-width': 3 * uiScale, rx: 5 
+            }));
             if (isStruc) {
-                const t = this.createNode('text', { x: p, y: topY-150*uiScale, fill: '#fff', 'text-anchor': 'middle', 'font-size': `${20*uiScale}px`, 'font-family': 'monospace' });
-                t.textContent = `${p}mm`; g.appendChild(t);
+                const t = this.createNode('text', { x: p, y: topY-150*uiScale, fill: '#1e293b', 'text-anchor': 'middle', 'font-size': `${24*uiScale}px`, 'font-family': 'monospace', 'font-weight': 'bold' });
+                t.textContent = `ANCHOR: ${p}mm`; g.appendChild(t);
             }
             this.svg.appendChild(g);
         });
 
-        // 2. Rails
-        this.svg.appendChild(this.createNode('rect', { x: 0, y: topY, width: pLen, height: RAIL_HEIGHT, fill: '#777', stroke: '#e74c3c', 'stroke-width': 4 }));
-        this.svg.appendChild(this.createNode('rect', { x: 0, y: botY, width: nLen, height: RAIL_HEIGHT, fill: '#777', stroke: '#3498db', 'stroke-width': 4 }));
+        // --- 6. Draw Rails (Inverted to look good on white) ---
+        this.svg.appendChild(this.createNode('rect', { x: 0, y: topY, width: pLen, height: RAIL_HEIGHT, fill: '#f8fafc', stroke: '#e74c3c', 'stroke-width': 4 * uiScale }));
+        this.svg.appendChild(this.createNode('rect', { x: 0, y: botY, width: nLen, height: RAIL_HEIGHT, fill: '#f8fafc', stroke: '#3498db', 'stroke-width': 4 * uiScale }));
 
-        // 3. Connectors & Off-Axis Offset Dimensions
+        // --- 7. Draw Connectors & Staggered Offsets ---
         const drawConn = (off, y, color, side) => {
             if (isNaN(off) || off < 0) return;
             const g = this.createNode('g', { opacity: 1 });
-            // Splice Plate
-            g.appendChild(this.createNode('rect', { x: off, y: y-10, width: CONNECTOR_LENGTH, height: RAIL_HEIGHT+20, fill: '#999', stroke: color, 'stroke-width': 3, rx: 5 }));
-            // Drill Holes
+            g.appendChild(this.createNode('rect', { 
+                x: off, y: y-10, width: CONNECTOR_LENGTH, height: RAIL_HEIGHT+20, 
+                fill: '#ffffff', stroke: color, 'stroke-width': 4 * uiScale, rx: 5 
+            }));
             const step = CONNECTOR_LENGTH / 6;
-            for(let i=1; i<=5; i++) g.appendChild(this.createNode('circle', { cx: off + step*i, cy: y+RAIL_HEIGHT/2, r: 8*uiScale, fill: '#111' }));
+            for(let i=1; i<=5; i++) g.appendChild(this.createNode('circle', { cx: off + step*i, cy: y+RAIL_HEIGHT/2, r: 8*uiScale, fill: '#334155' }));
             this.svg.appendChild(g);
             
-            // External Offset Dimension
             const dimY = (side === 'top') ? topY - 200 * uiScale : botY + RAIL_HEIGHT + 200 * uiScale;
-            this.svg.appendChild(this.drawDim(0, dimY, off, `${off}mm Offset`, color, uiScale));
+            this.svg.appendChild(this.drawDim(0, dimY, off, `Splice: ${off}mm Offset`, color, uiScale));
         };
 
         drawConn(parseInt(this.inputs.posOffset.value), topY, '#e74c3c', 'top');
         drawConn(parseInt(this.inputs.negOffset.value), botY, '#3498db', 'bot');
 
-        // 4. Absolute Rail Dimensions (Staggered & External)
+        // --- 8. Absolute Rail Dimensions ---
         const pDimY = topY - 80 * uiScale;
         const nDimY = botY + RAIL_HEIGHT + 80 * uiScale;
         this.svg.appendChild(this.drawDim(0, pDimY, pLen, `POS: ${pLen}mm`, '#e74c3c', uiScale));
@@ -237,24 +285,32 @@ class RailDrafterSVG {
 
     exportPDF() {
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ orientation: 'l', format: 'letter' });
-        doc.setFontSize(16);
-        doc.text("Asymmetric CAD Rail Draft - Letter Format", 15, 20);
+        // Strict 11x8.5 format declaration
+        const doc = new jsPDF({ orientation: 'l', format: 'letter', unit: 'mm' });
         
+        // Target specifically the white paper bounds
         const originalViewBox = this.svg.getAttribute('viewBox');
-        // Snapshot crop: focus on full bounding box
         this.svg.setAttribute('viewBox', `${this.boundingBox.minX} ${this.boundingBox.minY} ${this.boundingBox.maxX - this.boundingBox.minX} ${this.boundingBox.maxY - this.boundingBox.minY}`);
 
         const svgData = new XMLSerializer().serializeToString(this.svg);
         const img = new Image();
+        
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = 2400; canvas.height = 1200; // High-res capture
+            // High Resolution Print (300 DPI Letter)
+            canvas.width = 3300; 
+            canvas.height = 2550; 
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#2a2a35'; ctx.fillRect(0,0,canvas.width,canvas.height);
+            
+            ctx.fillStyle = '#ffffff'; 
+            ctx.fillRect(0,0,canvas.width,canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            doc.addImage(canvas.toDataURL('image/png'), 'PNG', 15, 40, 250, 140);
+            
+            // Blast the image directly onto the exact bounds of the PDF sheet
+            // 279.4 x 215.9 mm = 11 x 8.5 inches
+            doc.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', 0, 0, 279.4, 215.9);
             doc.save(`Rail_CAD_WO_${Date.now()}.pdf`);
+            
             this.svg.setAttribute('viewBox', originalViewBox);
         };
         img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));

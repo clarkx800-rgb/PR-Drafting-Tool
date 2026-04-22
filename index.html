@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline';">
-    <title>Power Rail Drafter - CAD Logic</title>
+    <title>Power Rail Drafter - WYSIWYG CAD</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPh58iIqZxeemTGOBOsdTjHllGQ//iIqZhtIeUNiT24G4kHk5DkKaqoXy/E/1gHQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         :root {
-            --bg-color: #121212; --panel-bg: #1e1e24; --workspace-bg: #2a2a35;
+            --bg-color: #121212; --panel-bg: #1e1e24; --workspace-bg: #1c1c22;
             --text-color: #f1f1f1; --accent: #ff6b6b; --border-color: #333;
         }
         body, html {
@@ -71,15 +71,15 @@
         .input-group { margin-bottom: 15px; }
         label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 5px; }
         input, select, textarea { width: 100%; padding: 10px; background: #121212; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; }
-        .primary-btn { background: var(--accent); color: white; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; border-radius: 4px; }
+        .primary-btn { background: var(--accent); color: white; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; border-radius: 4px; letter-spacing: 1px;}
     </style>
 </head>
 <body>
 
 <div class="app-layout">
     <header class="header">
-        <h1>Asymmetric CAD Drafter</h1>
-        <div id="status" style="font-size: 0.8rem; color: #aaa;">Status: OK</div>
+        <h1>Letter Canvas Drafter</h1>
+        <div id="status" style="font-size: 0.8rem; color: #aaa;">Status: Live WYSIWYG</div>
     </header>
 
     <div class="workspace-area">
@@ -115,7 +115,7 @@
         </div>
         <textarea id="specs" rows="3" placeholder="Notes..."></textarea>
     </div>
-    <div class="drawer-footer" style="padding:20px;"><button id="exportPdfBtn" class="primary-btn">EXPORT LETTER PDF</button></div>
+    <div class="drawer-footer" style="padding:20px;"><button id="exportPdfBtn" class="primary-btn">EXPORT SHEET TO PDF</button></div>
 </div>
 
 <script src="app.js"></script>
